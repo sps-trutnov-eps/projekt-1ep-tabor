@@ -1,3 +1,4 @@
+
 import pygame
 import sys
 import math
@@ -27,15 +28,37 @@ class Player:
         self.speed = 3
         self.on_bicycle = False
         self.direction = 0  # Úhel směru (0 = vpravo, 90 = dolů, atd.)
+        
+        # Načtení vlastního obrázku - TOTO MUSÍTE UPRAVIT
+        try:
+            # Nahraďte 'vas_obrazek.png' cestou k vašemu vlastnímu obrázku
+            self.image = pygame.image.load('player-regular.png')
+            #správný uhel
+            self.image = pygame.transform.rotate(self.image, -90)
+            # Změna velikosti obrázku, aby se vešel do kruhu o poloměru radius*2
+            self.image = pygame.transform.scale(self.image, (self.radius*2, self.radius*2))
+            # Vytvoření originální kopie pro rotaci
+            self.original_image = self.image.copy()
+        except pygame.error:
+            print("Nepodařilo se načíst obrázek. Používám základní tvar.")
+            self.image = None
     
     def draw(self):
-        # Vykreslení panáčka jako kruhu s malým ukazatelem směru
-        pygame.draw.circle(screen, RED, (int(self.x), int(self.y)), self.radius)
-        
-        # Ukazatel směru (nos)
-        nose_x = self.x + math.cos(math.radians(self.direction)) * self.radius
-        nose_y = self.y + math.sin(math.radians(self.direction)) * self.radius
-        pygame.draw.line(screen, BLACK, (self.x, self.y), (nose_x, nose_y), 3)
+        if self.image:
+            # Rotace obrázku podle směru
+            rotated_image = pygame.transform.rotate(self.original_image, -self.direction)
+            # Získání nového obdélníku pro rotovaný obrázek
+            rect = rotated_image.get_rect(center=(int(self.x), int(self.y)))
+            # Vykreslení rotovaného obrázku
+            screen.blit(rotated_image, rect.topleft)
+        else:
+            # Záložní řešení, pokud není obrázek
+            pygame.draw.circle(screen, RED, (int(self.x), int(self.y)), self.radius)
+            
+            # Ukazatel směru (nos)
+            nose_x = self.x + math.cos(math.radians(self.direction)) * self.radius
+            nose_y = self.y + math.sin(math.radians(self.direction)) * self.radius
+            pygame.draw.line(screen, BLACK, (self.x, self.y), (nose_x, nose_y), 3)
     
     def move(self, keys, bicycle):
         old_x, old_y = self.x, self.y
