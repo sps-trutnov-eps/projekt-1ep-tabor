@@ -2,7 +2,7 @@ import socket
 import threading
 import json
 
-HOST = "0.0.0.0"  # Poslouchá na všech IP
+HOST = "0.0.0.0"  # Poslouchá na všech IP (měl by to být správný hostitel)
 PORT = 5555
 MAX_PLAYERS = 15
 
@@ -27,19 +27,29 @@ def handle_client(conn, addr):
 
     except ConnectionResetError:
         print(f"[DISCONNECTED] {addr} odpojen")
+    except Exception as e:
+        print(f"[ERROR] Chyba při zpracování dat pro {addr}: {e}")
     finally:
         del clients[addr_str]
         conn.close()
 
 def start_server():
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
+    # Pokud použijeme '0.0.0.0', server poslouchá na všech rozhraních
     server.bind((HOST, PORT))
     server.listen(MAX_PLAYERS)
     print(f"[SERVER] Běží na {HOST}:{PORT}")
 
     while True:
-        conn, addr = server.accept()
-        threading.Thread(target=handle_client, args=(conn, addr)).start()
+        try:
+            conn, addr = server.accept()
+            print(f"[SERVER] Připojení od {addr}")
+            threading.Thread(target=handle_client, args=(conn, addr)).start()
+
+        except Exception as e:
+            print(f"[ERROR] Chyba při přijímání připojení: {e}")
+            break
 
 if __name__ == "__main__":
     start_server()
