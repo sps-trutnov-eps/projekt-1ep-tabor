@@ -21,8 +21,8 @@ player_radius = 20
 player_speed = 5
 
 # keř
-bush_pos = [WIDTH // 2, HEIGHT // 2 - 100]  # Position bush above the center
-bush_block_size = player_radius * 1.5  # Size of each block in the bush
+bush_pos = [WIDTH // 2, HEIGHT // 2 - 100]  # pozice keře
+bush_block_size = player_radius * 1.5  # velikost jednotlivý blocků
 
 # funkce pro počítání vzdálenost mezi body
 def distance(point1, point2):
