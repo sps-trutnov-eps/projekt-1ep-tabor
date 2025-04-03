@@ -2,7 +2,7 @@ import socket
 import threading
 import json
 
-HOST = "0.0.0.0"  # Poslouchá na všech IP (měl by to být správný hostitel)
+HOST = "192.168.216.218"  # Poslouchá na všech IP (měl by to být správný hostitel)
 PORT = 5555
 MAX_PLAYERS = 15
 
