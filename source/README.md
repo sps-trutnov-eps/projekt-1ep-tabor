@@ -1,3 +1,3 @@
-# Zdrojové kódy aplikace
+# Prototyp síťové hry více hráčů
 
-Sem patří umístit aplikace (tzn. v této složce bude `main.py` soubor).
+Spuštěním skriptu `run.cmd` spustíte tři instance hry na místním počítači. Instance jsou síťové propojené.
