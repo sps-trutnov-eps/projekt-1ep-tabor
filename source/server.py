@@ -10,7 +10,8 @@ clients = {}  # Ukládá připojené hráče ve formátu {addr: (x, y)}
 
 def handle_client(conn, addr):
     print(f"[NEW CONNECTION] {addr} připojen")
-    clients[addr] = (100, 100)  # Startovní pozice
+    addr_str = f"{addr[0]}:{addr[1]}"  # Převod tuple na string
+    clients[addr_str] = (100, 100)  # Startovní pozice
 
     try:
         while True:
@@ -19,7 +20,7 @@ def handle_client(conn, addr):
                 break
             
             data = json.loads(data)
-            clients[addr] = (data["x"], data["y"])
+            clients[addr_str] = (data["x"], data["y"])
 
             # Posílá zpět všechny pozice hráčů
             conn.send(json.dumps(clients).encode())
@@ -27,7 +28,7 @@ def handle_client(conn, addr):
     except ConnectionResetError:
         print(f"[DISCONNECTED] {addr} odpojen")
     finally:
-        del clients[addr]
+        del clients[addr_str]
         conn.close()
 
 def start_server():
