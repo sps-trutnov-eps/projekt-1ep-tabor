@@ -30,13 +30,17 @@ def distance(point1, point2):
 
 # vykreslení keře
 def draw_boxy_bush(pos, block_size, player_pos):
-    # tvar pluska z 5 čtverců
+    # tvar pluska z 9 čtverců
     bush_blocks = [
         (pos[0] - block_size/2, pos[1] - block_size/2, block_size, block_size),
         (pos[0] - block_size/2, pos[1] - block_size*1.5, block_size, block_size),
         (pos[0] - block_size/2, pos[1] + block_size/2, block_size, block_size),
         (pos[0] - block_size*1.5, pos[1] - block_size/2, block_size, block_size),
-        (pos[0] + block_size/2, pos[1] - block_size/2, block_size, block_size)
+        (pos[0] + block_size/2, pos[1] - block_size/2, block_size, block_size),
+        (pos[0] + block_size/2, pos[1] + block_size/1.9, block_size, block_size), # pravý dolní block
+        (pos[0] + block_size/2, pos[1] - block_size*1.5, block_size, block_size), # pravý horní block
+        (pos[0] - block_size/0.67, pos[1] - block_size*1.5, block_size, block_size), # levý horní block
+        (pos[0] - block_size/0.67, pos[1] + block_size/2, block_size, block_size) # levý dolní block
     ]
     
     # vykreslení blocků
