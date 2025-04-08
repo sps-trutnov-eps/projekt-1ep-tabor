@@ -21,49 +21,46 @@ GRAY = (200, 200, 200)  # Barva na silnici
 # Třída pro kameru/svět
 class Camera:
     def __init__(self):
-        self.x = 0  # offset kamery v ose x
-        self.y = 0  # offset kamery v ose y
-        self.world_width = 2000  # šířka celého světa
-        self.world_height = 2000  # výška celého světa
+        self.x = 0  # offset x
+        self.y = 0  # offset y
+        self.world_width = 2000
+        self.world_height = 2000
     
     def apply(self, x, y):
-        # Převede světové souřadnice na souřadnice obrazovky
+        #světové souřadnice na souřadnice obrazovky
         return x - self.x, y - self.y
     
     def update(self, target_x, target_y):
-        # Aktualizujte kameru tak, aby cílový objekt zůstal uprostřed obrazovky
+        # Aktualizujte kamery
         self.x = target_x - WIDTH // 2
         self.y = target_y - HEIGHT // 2
         
-        # Omezení kamery, aby nepřesahovala hranice světa
+        #maximalní hranice
         self.x = max(0, min(self.world_width - WIDTH, self.x))
         self.y = max(0, min(self.world_height - HEIGHT, self.y))
 
 # Třída pro panáčka
 class Player:
     def __init__(self, x, y):
-        self.x = x  # skutečná pozice ve světě
+        self.x = x  #pozice ve světě
         self.y = y
         self.radius = 15
         self.speed = 3
-        self.direction = 0  # Úhel směru (0 = vpravo, 90 = dolů, atd.)
-        
-        # Načtení vlastního obrázku - TOTO MUSÍTE UPRAVIT
+        self.direction = 0  #kam jde(uhel)
         try:
-            # Nahraďte 'vas_obrazek.png' cestou k vašemu vlastnímu obrázku
             self.image = pygame.image.load('player-regular.png')
             #správný uhel
             self.image = pygame.transform.rotate(self.image, -90)
-            # Změna velikosti obrázku, aby se vešel do kruhu o poloměru radius*2
+            #změna velikosti obrázku kruh z obrázku
             self.image = pygame.transform.scale(self.image, (self.radius*2, self.radius*2))
-            # Vytvoření originální kopie pro rotaci
+            #vytvoření originální kopie pro rotaci
             self.original_image = self.image.copy()
         except pygame.error:
             print("Nepodařilo se načíst obrázek. Používám základní tvar.")
             self.image = None
     
     def draw(self, camera):
-        # Získejte pozici na obrazovce z pozice ve světě
+        # kde vykreslit obrázek
         screen_x, screen_y = camera.apply(self.x, self.y)
         
         if self.image:
@@ -76,8 +73,7 @@ class Player:
         else:
             # Záložní řešení, pokud není obrázek
             pygame.draw.circle(screen, RED, (int(screen_x), int(screen_y)), self.radius)
-            
-            # Ukazatel směru (nos)
+            #nos      
             nose_x = screen_x + math.cos(math.radians(self.direction)) * self.radius
             nose_y = screen_y + math.sin(math.radians(self.direction)) * self.radius
             pygame.draw.line(screen, BLACK, (screen_x, screen_y), (nose_x, nose_y), 3)
@@ -347,5 +343,5 @@ def main():
     pygame.quit()
     sys.exit()
 
-if __name__ == "__main__":
+if True == True:
     main()
