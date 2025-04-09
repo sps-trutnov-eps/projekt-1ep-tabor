@@ -19,24 +19,49 @@ def handle_client(conn, addr):
     try:
         while True:
             data = conn.recv(1024).decode()
+            print(f"[DATA] Přijata data od {addr}: '{data}'")  # Diagnostika
+            
             if not data:
+                print(f"[WARNING] Prázdná data od {addr}")
                 break
             
-            data = json.loads(data)
-            clients[addr_str] = (data["x"], data["y"])
-
-            # Posílá zpět všechny pozice hráčů
-            conn.send(json.dumps(clients).encode())
+            try:
+                # Zpracování příchozích dat
+                data_dict = json.loads(data)
+                
+                # Validace dat - ujistíme se, že obsahují 'x' a 'y'
+                if 'x' not in data_dict or 'y' not in data_dict:
+                    print(f"[ERROR] Chybějící x nebo y v datech od {addr}")
+                    continue
+                
+                # Aktualizace pozice klienta
+                clients[addr_str] = (data_dict["x"], data_dict["y"])
+                
+                # Příprava dat pro odeslání
+                response_data = json.dumps(clients)
+                print(f"[RESPONSE] Odesílám odpověď: '{response_data}'")  # Diagnostika
+                
+                # Odeslání odpovědi
+                conn.send(response_data.encode())
+            
+            except json.JSONDecodeError as e:
+                print(f"[ERROR] Neplatný JSON od {addr}: {e}")
+                # Pošleme zpět chybovou zprávu
+                error_msg = json.dumps({"error": "Neplatný JSON"})
+                conn.send(error_msg.encode())
+            except Exception as e:
+                print(f"[ERROR] Chyba při zpracování dat pro {addr}: {e}")
 
     except ConnectionResetError:
         print(f"[DISCONNECTED] {addr} odpojen")
     except Exception as e:
-        print(f"[ERROR] Chyba při zpracování dat pro {addr}: {e}")
+        print(f"[ERROR] Obecná chyba pro {addr}: {e}")
     finally:
         # Bezpečné odstranění klienta, pokud existuje
         if addr_str in clients:
             del clients[addr_str]
         conn.close()
+        print(f"[CLEANUP] Spojení s {addr} uzavřeno a klient odstraněn")
 
 def start_server():
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -68,4 +93,3 @@ def start_server():
 
 if __name__ == "__main__":
     start_server()
-    

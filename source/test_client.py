@@ -3,8 +3,8 @@ import json
 import time
 import random
 
-# Adresa tvého serveru na Render.com - tuto URL změň na svoji
-SERVER_HOST = "projekt-1ep-tabor.onrender.com"  # Změň na URL tvého Render serveru
+# Adresa tvého serveru - pro lokální testování použij localhost
+SERVER_HOST = "projekt-1ep-tabor.onrender.com"  # nebo "127.0.0.1"
 SERVER_PORT = 5555
 
 def test_connection():
@@ -39,18 +39,33 @@ def simulate_player(client, moves=5):
             
             # Odeslání pozice na server
             message = json.dumps(position)
+            print(f"Odesílaná data (JSON): '{message}'")
+            
+            # Ujistíme se, že odesíláme validní data
+            if not message:
+                print("CHYBA: Prázdná zpráva!")
+                continue
+                
+            # Přidáme explicitní zakončení zprávy pro server
             client.send(message.encode())
             
             # Přijetí odpovědi
+            print("Čekám na odpověď od serveru...")
             response = client.recv(4096).decode()
+            print(f"Přijatá surová data: '{response}'")
             
+            if not response:
+                print("CHYBA: Server vrátil prázdnou odpověď!")
+                continue
+                
             try:
                 players_data = json.loads(response)
                 print(f"Přijata data od serveru ({len(players_data)} hráčů):")
                 for addr, pos in players_data.items():
                     print(f"  - Hráč {addr}: pozice {pos}")
-            except json.JSONDecodeError:
-                print(f"Nepodařilo se zpracovat odpověď: {response}")
+            except json.JSONDecodeError as e:
+                print(f"Nepodařilo se zpracovat odpověď jako JSON: {e}")
+                print(f"Odpověď: '{response}'")
             
             time.sleep(1)  # Počkáme sekundu mezi pohyby
     
@@ -59,7 +74,7 @@ def simulate_player(client, moves=5):
     except ConnectionAbortedError:
         print("Spojení bylo přerušeno")
     except Exception as e:
-        print(f"Chyba: {e}")
+        print(f"Neočekávaná chyba: {e}")
     finally:
         client.close()
         print("Spojení ukončeno")
@@ -74,10 +89,8 @@ def run_test():
     else:
         print("\nTest selhal: Nepodařilo se připojit k serveru.")
         print("Zkontroluj, že:")
-        print("1. SERVER_HOST obsahuje správnou URL adresu tvého Render serveru")
-        print("2. Server na Render.com běží a není v režimu spánku")
-        print("3. Firewall neblokuje odchozí připojení na port 5555")
+        print("1. Server běží na adrese", SERVER_HOST, "a portu", SERVER_PORT)
+        print("2. Firewall neblokuje připojení")
 
 if __name__ == "__main__":
     run_test()
-    
