@@ -12,12 +12,11 @@ SCREEN_HEIGHT = 600
 PLAYER_SIZE = 30
 POWERUP_SIZE = 20
 PLAYER_SPEED = 5
-POWERUP_TYPES = ["sprint", "shield", "invisible", "freeze", "bounce"]
+POWERUP_TYPES = ["sprint", "shield", "invisible", "bounce"]
 POWERUP_COLORS = {
     "sprint": (255, 255, 0),    # žlutá
     "shield": (0, 0, 255),      # modrá
-    "invisible": (200, 200, 200), # šedá
-    "freeze": (0, 255, 255),    # azurová
+    "invisible": (200, 200, 200), # šedá    
     "bounce": (255, 0, 255)     # purpurová
 }
 POWERUP_COUNT = 8
