@@ -1,95 +1,119 @@
-import socket
-import threading
-import json
 import os
+import json
+import asyncio
+import websockets
+from aiohttp import web
 
-# Render.com přiřazuje port pomocí proměnné prostředí PORT
-# a používá 0.0.0.0 pro poslech na všech rozhraních
+# Globální proměnné
 HOST = "0.0.0.0"
 PORT = int(os.environ.get("PORT", 5555))
-MAX_PLAYERS = 15
+CLIENTS = {}  # Ukládá připojené hráče ve formátu {id: (x, y)}
+WEBSOCKET_CLIENTS = {}  # Ukládá WebSocket připojení
 
-clients = {}  # Ukládá připojené hráče ve formátu {addr: (x, y)}
+# Generátor ID klientů
+client_id_counter = 0
 
-def handle_client(conn, addr):
-    print(f"[NEW CONNECTION] {addr} připojen")
-    addr_str = f"{addr[0]}:{addr[1]}"  # Převod tuple na string
-    clients[addr_str] = (100, 100)  # Startovní pozice
-
+async def handle_websocket(websocket, path):
+    """Zpracování WebSocket připojení"""
+    global client_id_counter
+    client_id = str(client_id_counter)
+    client_id_counter += 1
+    
     try:
-        while True:
-            data = conn.recv(1024).decode()
-            print(f"[DATA] Přijata data od {addr}: '{data}'")  # Diagnostika
-            
-            if not data:
-                print(f"[WARNING] Prázdná data od {addr}")
-                break
-            
+        # Registrace nového klienta
+        CLIENTS[client_id] = (100, 100)  # Startovní pozice
+        WEBSOCKET_CLIENTS[client_id] = websocket
+        
+        print(f"[NEW CONNECTION] WebSocket klient {client_id} připojen")
+        
+        # Nekonečná smyčka pro zpracování zpráv
+        async for message in websocket:
             try:
-                # Zpracování příchozích dat
-                data_dict = json.loads(data)
+                data = json.loads(message)
                 
-                # Validace dat - ujistíme se, že obsahují 'x' a 'y'
-                if 'x' not in data_dict or 'y' not in data_dict:
-                    print(f"[ERROR] Chybějící x nebo y v datech od {addr}")
+                # Validace dat
+                if 'x' not in data or 'y' not in data:
+                    print(f"[ERROR] Neplatná data od klienta {client_id}")
+                    await websocket.send(json.dumps({"error": "Neplatná data, chybí x nebo y"}))
                     continue
                 
-                # Aktualizace pozice klienta
-                clients[addr_str] = (data_dict["x"], data_dict["y"])
+                # Aktualizace pozice
+                CLIENTS[client_id] = (data["x"], data["y"])
+                print(f"[UPDATE] Klient {client_id} pozice: ({data['x']}, {data['y']})")
                 
-                # Příprava dat pro odeslání
-                response_data = json.dumps(clients)
-                print(f"[RESPONSE] Odesílám odpověď: '{response_data}'")  # Diagnostika
+                # Posílá zpět všechny pozice hráčů
+                await websocket.send(json.dumps(CLIENTS))
                 
-                # Odeslání odpovědi
-                conn.send(response_data.encode())
-            
-            except json.JSONDecodeError as e:
-                print(f"[ERROR] Neplatný JSON od {addr}: {e}")
-                # Pošleme zpět chybovou zprávu
-                error_msg = json.dumps({"error": "Neplatný JSON"})
-                conn.send(error_msg.encode())
+                # Nepovinné: Rozešli aktualizaci všem připojeným klientům
+                # await broadcast_positions()
+                
+            except json.JSONDecodeError:
+                print(f"[ERROR] Neplatný JSON od klienta {client_id}")
+                await websocket.send(json.dumps({"error": "Neplatný JSON"}))
             except Exception as e:
-                print(f"[ERROR] Chyba při zpracování dat pro {addr}: {e}")
-
-    except ConnectionResetError:
-        print(f"[DISCONNECTED] {addr} odpojen")
-    except Exception as e:
-        print(f"[ERROR] Obecná chyba pro {addr}: {e}")
+                print(f"[ERROR] Chyba při zpracování dat pro klienta {client_id}: {e}")
+                
+    except websockets.exceptions.ConnectionClosed:
+        print(f"[DISCONNECTED] WebSocket klient {client_id} odpojen")
     finally:
-        # Bezpečné odstranění klienta, pokud existuje
-        if addr_str in clients:
-            del clients[addr_str]
-        conn.close()
-        print(f"[CLEANUP] Spojení s {addr} uzavřeno a klient odstraněn")
+        # Odstranění klienta při odpojení
+        if client_id in CLIENTS:
+            del CLIENTS[client_id]
+        if client_id in WEBSOCKET_CLIENTS:
+            del WEBSOCKET_CLIENTS[client_id]
+        print(f"[CLEANUP] Klient {client_id} odstraněn")
 
-def start_server():
-    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+async def broadcast_positions():
+    """Rozešle pozice všem připojeným klientům"""
+    if WEBSOCKET_CLIENTS:
+        positions_json = json.dumps(CLIENTS)
+        await asyncio.gather(
+            *[ws.send(positions_json) for ws in WEBSOCKET_CLIENTS.values()],
+            return_exceptions=True
+        )
+
+# HTTP endpointy pro základní informace
+async def handle_root(request):
+    """Základní endpoint pro kontrolu, že server běží"""
+    return web.Response(text="Game server is running. Connect via WebSocket.")
+
+async def handle_status(request):
+    """Endpoint pro zobrazení stavu serveru"""
+    status = {
+        "clients_count": len(CLIENTS),
+        "clients": CLIENTS
+    }
+    return web.json_response(status)
+
+# Nastavení HTTP a WebSocket serveru
+async def start_server():
+    # Vytvoření HTTP aplikace
+    app = web.Application()
+    app.router.add_get('/', handle_root)
+    app.router.add_get('/status', handle_status)
     
-    # Povolí opětovné použití adresy
-    server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    # Nastavení WebSocket serveru
+    ws_server = websockets.serve(handle_websocket, HOST, 0)  # Port 0 pro automatické přiřazení
     
-    # Bind na HOST a PORT
-    server.bind((HOST, PORT))
-    server.listen(MAX_PLAYERS)
-    print(f"[SERVER] Běží na {HOST}:{PORT}")
-
-    try:
-        while True:
-            try:
-                conn, addr = server.accept()
-                print(f"[SERVER] Připojení od {addr}")
-                thread = threading.Thread(target=handle_client, args=(conn, addr))
-                thread.daemon = True  # Zajistí, že vlákno se ukončí, když se ukončí hlavní program
-                thread.start()
-
-            except Exception as e:
-                print(f"[ERROR] Chyba při přijímání připojení: {e}")
-    except KeyboardInterrupt:
-        print("[SERVER] Server zastaven uživatelem")
-    finally:
-        server.close()
-        print("[SERVER] Server vypnut")
+    # Spuštění HTTP serveru
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, HOST, PORT)
+    
+    print(f"[SERVER] HTTP server běží na http://{HOST}:{PORT}")
+    print(f"[SERVER] WebSocket server připraven pro připojení")
+    
+    # Spuštění obou serverů
+    await asyncio.gather(
+        site.start(),
+        ws_server
+    )
+    
+    # Udržuj server spuštěný
+    await asyncio.Future()  # Běží dokud se nevypne
 
 if __name__ == "__main__":
-    start_server()
+    try:
+        asyncio.run(start_server())
+    except KeyboardInterrupt:
+        print("[SERVER] Server zastaven uživatelem")
