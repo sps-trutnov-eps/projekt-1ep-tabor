@@ -14,12 +14,16 @@ WHITE = (255, 255, 255)
 RED = (255, 0, 0)
 BLACK = (0, 0, 0)
 GREEN = (45, 160, 45)  # středně zelená
+LIGHT_GREEN = (75, 200, 75)
+YELLOW_GREEN = (150, 220, 50)
+
 
 # kulička hráče
 player_pos = [WIDTH // 2, HEIGHT // 2]  # spawn uprostřed
 player_radius = 20
 player_speed = 5
 player_alpha = 255
+player_prev_pos = player_pos.copy()
 
 # keř
 bush_pos = [WIDTH // 2, HEIGHT // 2 - 100]  # pozice keře
@@ -28,6 +32,30 @@ bush_block_size = player_radius * 1.5  # velikost jednotlivý blocků
 # funkce pro počítání vzdálenost mezi body
 def distance(point1, point2):
     return math.sqrt((point1[0] - point2[0])**2 + (point1[1] - point2[1])**2)
+
+# particle class
+class Particle:
+    def __init__(self, x, y, color):
+        self.x = x
+        self.y = y
+        self.radius = player_radius / 4
+        self.color = color
+        self.alpha = 255
+        self.vx = random.uniform(-1.5, 1.5)
+        self.vy = random.uniform(-2, 0)  # počáteční pohyb nahoru
+        self.gravity = 0.1
+        self.lifetime = random.randint(30, 60)
+    
+    def update(self):
+        self.vy += self.gravity # aplikování gravitace
+        # pohyb particlů
+        self.x  += self.vx
+        self.y  += self.vy
+        self.lifetime -= 1
+        self.alpha = int((self.lifetime / 60) * 255)
+        if self.lifetime <= 0:
+            self.alpha = 0
+        
 
 # vykreslení keře
 def draw_boxy_bush(pos, block_size, player_pos):
