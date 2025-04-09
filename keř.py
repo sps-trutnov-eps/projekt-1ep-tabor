@@ -19,6 +19,7 @@ GREEN = (45, 160, 45)  # středně zelená
 player_pos = [WIDTH // 2, HEIGHT // 2]  # spawn uprostřed
 player_radius = 20
 player_speed = 5
+player_alpha = 255
 
 # keř
 bush_pos = [WIDTH // 2, HEIGHT // 2 - 100]  # pozice keře
@@ -43,6 +44,9 @@ def draw_boxy_bush(pos, block_size, player_pos):
         (pos[0] - block_size/0.67, pos[1] + block_size/2, block_size, block_size) # levý dolní block
     ]
     
+    player_touching = False
+    player_inside = False
+    
     # vykreslení blocků
     for block in bush_blocks:
         # vypočítání prostředek blocků
@@ -58,9 +62,11 @@ def draw_boxy_bush(pos, block_size, player_pos):
         if (block[0] <= player_pos[0] <= block[0] + block[2] and 
             block[1] <= player_pos[1] <= block[1] + block[3]):
             alpha = 64  # hodně transparent když uvnitř
+            player_inside = True 
         elif dist < player_radius + block_size:
             # postupně snižovat alphu když je hráč blíže
             alpha = max(64, int(255 * (dist - player_radius) / block_size))
+            player_touching = True 
         else:
             alpha = 255  # plná alpha když je hráč pryč
         
@@ -73,6 +79,8 @@ def draw_boxy_bush(pos, block_size, player_pos):
         
         # vykreslit blok na obrazovku
         screen.blit(block_surface, (block[0], block[1]))
+    
+    return player_inside, player_touching
 
 clock = pygame.time.Clock()
 running = True
@@ -99,11 +107,22 @@ while running:
     
     screen.fill(BLACK)
     
+    player_inside, player_touching = draw_boxy_bush(bush_pos, bush_block_size, player_pos)
+    
+    if player_inside:
+        player_alpha = 64
+    elif player_touching:
+        player_alpha = 128
+    else:
+        player_alpha = min(255, player_alpha + 10)
+    
+    # vykreslení hráče    
+    player_surface = pygame.Surface((player_radius*2, player_radius*2), pygame.SRCALPHA)
+    pygame.draw.circle(player_surface, (*RED, player_alpha), (player_radius, player_radius), player_radius)
+    screen.blit(player_surface, (player_pos[0] - player_radius, player_pos[1] - player_radius))
+    
     # vykreslení pluska
     draw_boxy_bush(bush_pos, bush_block_size, player_pos)
-    
-    # vykreslení hráče
-    pygame.draw.circle(screen, RED, player_pos, player_radius)
     
     pygame.display.flip()
     
