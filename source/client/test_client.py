@@ -4,9 +4,9 @@ import random
 import aiohttp
 import time
 
-# URL tvého serveru na Render.com
-SERVER_URL = "wss://projekt-1ep-tabor.onrender.com/ws"  # Použij svou URL z Render.com
-# Pro lokální testování použij:
+# Pro server hostovaný na Render.com použij:
+SERVER_URL = "wss://projekt-1ep-tabor.onrender.com/ws"
+# Pro lokální server použij:
 # SERVER_URL = "ws://localhost:5555/ws"
 
 async def connect_and_play():
