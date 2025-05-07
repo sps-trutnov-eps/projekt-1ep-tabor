@@ -144,7 +144,7 @@ class PowerUp:
         if self.active:
              image = powerup_textury[self.type]
              image = pygame.transform.scale(image, (80, 80))
-             screen.blit(image, (self.x - POWERUP_SIZE // 2, self.y - POWERUP_SIZE // 2))
+             screen.blit(image, (self.x - 50, self.y - 60))
             
     def check_collision(self, player):
         if not self.active:
