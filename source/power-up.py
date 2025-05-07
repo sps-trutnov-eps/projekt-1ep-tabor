@@ -7,17 +7,15 @@ import math
 pygame.init()
 
 # Konstanty
-SCREEN_WIDTH = 800
-SCREEN_HEIGHT = 600
+SCREEN_WIDTH = 1920
+SCREEN_HEIGHT = 1080
 PLAYER_SIZE = 30
-POWERUP_SIZE = 20
+POWERUP_SIZE = 5
 PLAYER_SPEED = 5
-POWERUP_TYPES = ["sprint", "shield", "invisible", "bounce"]
+POWERUP_TYPES = ["sprint", "shield"]
 POWERUP_COLORS = {
     "sprint": (255, 255, 0),    # žlutá
     "shield": (0, 0, 255),      # modrá
-    "invisible": (200, 200, 200), # šedá    
-    "bounce": (255, 0, 255)     # purpurová
 }
 POWERUP_COUNT = 8
 
@@ -25,6 +23,13 @@ POWERUP_COUNT = 8
 screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
 pygame.display.set_caption("Power-Up Game")
 clock = pygame.time.Clock()
+
+powerup_textury = {
+    "sprint": pygame.image.load("Blesk_tabor.png"),
+    "shield": pygame.image.load("Štít_tabor.png")
+    }
+
+
 
 # Třída hráče
 class Player:
@@ -137,7 +142,9 @@ class PowerUp:
     
     def draw(self):
         if self.active:
-            pygame.draw.circle(screen, self.color, (self.x, self.y), self.radius)
+             image = powerup_textury[self.type]
+             image = pygame.transform.scale(image, (80, 80))
+             screen.blit(image, (self.x - POWERUP_SIZE // 2, self.y - POWERUP_SIZE // 2))
             
     def check_collision(self, player):
         if not self.active:

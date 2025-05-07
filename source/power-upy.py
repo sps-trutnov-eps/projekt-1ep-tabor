@@ -1,0 +1,2 @@
+Blesk_tabor.png
+Štít_tabor.png
