@@ -1,6 +1,7 @@
 import pygame
 import sys
 import math
+import random
 
 
 pygame.init()
@@ -29,10 +30,6 @@ player_prev_pos = player_pos.copy()
 bush_pos = [WIDTH // 2, HEIGHT // 2 - 100]  # pozice keře
 bush_block_size = player_radius * 1.5  # velikost jednotlivý blocků
 
-# funkce pro počítání vzdálenost mezi body
-def distance(point1, point2):
-    return math.sqrt((point1[0] - point2[0])**2 + (point1[1] - point2[1])**2)
-
 # particle class
 class Particle:
     def __init__(self, x, y, color):
@@ -55,7 +52,24 @@ class Particle:
         self.alpha = int((self.lifetime / 60) * 255)
         if self.lifetime <= 0:
             self.alpha = 0
-        
+        self.radius = max(1, self.radius * 0.98)
+    
+    def draw(self, surface):
+        if self.alpha > 0:
+            particle_surface = pygame.Surface((self.radius*2, self.radius*2), pygame.SRCALPHA)
+            pygame.draw.circle(particle_surface, (*self.color, self.alpha), 
+                             (self.radius, self.radius), self.radius)
+            surface.blit(particle_surface, (self.x - self.radius, self.y - self.radius))
+            
+    def is_dead(self):
+        return self.lifetime <= 0
+
+# list na aktivní particly
+particles = []
+
+# funkce pro počítání vzdálenost mezi body
+def distance(point1, point2):
+    return math.sqrt((point1[0] - point2[0])**2 + (point1[1] - point2[1])**2)
 
 # vykreslení keře
 def draw_boxy_bush(pos, block_size, player_pos):
@@ -75,7 +89,7 @@ def draw_boxy_bush(pos, block_size, player_pos):
     player_touching = False
     player_inside = False
     
-    # vykreslení blocků
+        # vykreslení blocků
     for block in bush_blocks:
         # vypočítání prostředek blocků
         block_center = (block[0] + block[2]/2, block[1] + block[3]/2)
@@ -87,13 +101,12 @@ def draw_boxy_bush(pos, block_size, player_pos):
         # alpha = 255 - transparency nulová
         
         # jestli je hráč v bloku nebo hodně blízko
-        if (block[0] <= player_pos[0] <= block[0] + block[2] and 
-            block[1] <= player_pos[1] <= block[1] + block[3]):
+        if point_in_rect(player_pos, block):
             alpha = 64  # hodně transparent když uvnitř
             player_inside = True 
-        elif dist < player_radius + block_size:
+        elif dist < player_radius + block_size/2:
             # postupně snižovat alphu když je hráč blíže
-            alpha = max(64, int(255 * (dist - player_radius) / block_size))
+            alpha = max(64, int(255 * (dist - player_radius) / block_size/2))
             player_touching = True 
         else:
             alpha = 255  # plná alpha když je hráč pryč
@@ -108,7 +121,30 @@ def draw_boxy_bush(pos, block_size, player_pos):
         # vykreslit blok na obrazovku
         screen.blit(block_surface, (block[0], block[1]))
     
-    return player_inside, player_touching
+    return player_inside, player_touching, bush_blocks
+
+# funkce na zjištění jestli je bod ve čtverci
+def point_in_rect(point, rect):
+    return (rect[0] <= point[0] <= rect[0] + rect[2] and
+            rect[1] <= point[1] <= rect[1] + rect[3])
+
+# funkce na detekování kolize s okraji a vytvořit particly
+def check_bush_collision(old_pos, new_pos, bush_blocks):
+    was_inside = any(point_in_rect(old_pos, block) for block in bush_blocks)
+    is_inside = any(point_in_rect(new_pos, block) for block in bush_blocks)
+    
+    # jestli se hráč dotkl okraje vytvořit particly
+    if was_inside != is_inside:
+        # vytvořit particly na místě dotyku (přibližně)
+        collision_x = (old_pos[0] + new_pos[0]) / 2
+        collision_y = (old_pos[1] + new_pos[1]) / 2
+        
+        # vytvořit skupinku patrticlů
+        for _ in range(15): # <--- kolik particlů
+            color = random.choice([LIGHT_GREEN, YELLOW_GREEN, GREEN])
+            particles.append(Particle(collision_x, collision_y, color))
+        
+
 
 clock = pygame.time.Clock()
 running = True
@@ -117,6 +153,9 @@ while running:
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
+            
+    # uložit předchozí pozici pro detekování kolize přes okraje
+    player_prev_pos = player_pos.copy()
     
     keys = pygame.key.get_pressed()
     
@@ -135,7 +174,19 @@ while running:
     
     screen.fill(BLACK)
     
-    player_inside, player_touching = draw_boxy_bush(bush_pos, bush_block_size, player_pos)
+    player_inside, player_touching, bush_blocks = draw_boxy_bush(bush_pos, bush_block_size, player_pos)
+    
+    # zkontrolovat kolizi s okraji a vytvořit particly když potřeba
+    if player_pos != player_prev_pos: # zkontrolovat jen když se hráč pohybuje
+        check_bush_collision(player_prev_pos, player_pos, bush_blocks)
+    
+    # update a vykreslení všech particlů
+    for particle in particles[:]:
+        particle.update()
+        if particle.is_dead():
+            particles.remove(particle)
+        else:
+            particle.draw(screen)
     
     if player_inside:
         player_alpha = 64
