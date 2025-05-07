@@ -39,6 +39,10 @@ speed = 5
 response_time = None  # Proměnná pro měření odezvy serveru
 interpolation_factor = 0.1  # Faktor pro plynulou interpolaci
 
+# Pro synchronizaci i při neaktivitě hráče
+last_update_time = 0
+UPDATE_INTERVAL = 0.1  # Interval pro odeslání keep-alive zpráv v sekundách
+
 # Generuj náhodnou barvu pro rozlišení různých instancí na stejném počítači
 r = random.randint(100, 255)
 g = random.randint(100, 255)
@@ -47,8 +51,8 @@ my_color = (r, g, b)
 
 # WebSocket komunikace a herní smyčka
 async def game_loop():
-    global players, connected, status, x, y, server_x, server_y, my_id, response_time
-    
+    global players, connected, status, x, y, server_x, server_y, my_id, response_time, last_update_time
+
     # Připojení k serveru
     try:
         async with aiohttp.ClientSession() as session:
@@ -56,22 +60,26 @@ async def game_loop():
                 connected = True
                 status = "Připojeno"
                 print("Připojeno k serveru")
-                
+
                 # Počáteční odeslání pozice pro registraci
                 await ws.send_json({"x": x, "y": y})
-                
+                last_update_time = time.time()
+
                 # Hlavní herní smyčka
                 running = True
                 while running:
+                    # Začátek cyklu - měření času pro FPS
+                    frame_start = time.time()
+
                     # Zpracování událostí
                     for event in pygame.event.get():
                         if event.type == pygame.QUIT:
                             running = False
-                    
+
                     # Zpracování vstupů
                     keys = pygame.key.get_pressed()
                     moved = False
-                    
+
                     if keys[pygame.K_w] or keys[pygame.K_UP]:
                         y -= speed
                         moved = True
@@ -84,15 +92,25 @@ async def game_loop():
                     if keys[pygame.K_d] or keys[pygame.K_RIGHT]:
                         x += speed
                         moved = True
-                    
+
                     # Omezení pohybu na herní plochu
                     x = max(0, min(WIDTH - 20, x))
                     y = max(0, min(HEIGHT - 20, y))
+
+                    # Posílání dat serveru
+                    current_time = time.time()
                     
-                    # Posílání dat serveru, jen pokud se hráč pohnul
-                    if moved:
+                    # Posílání dat, pokud se hráč pohnul NEBO vypršel interval pro keep-alive
+                    if moved or current_time - last_update_time >= UPDATE_INTERVAL:
                         start_time = time.time()  # Začátek měření času
                         await ws.send_json({"x": x, "y": y})
+                        last_update_time = current_time
+                        
+                        # Pokud se nepohnul, je to keep-alive zpráva
+                        if not moved:
+                            # Také požádáme o aktualizaci pozice ostatních hráčů
+                            # Jako indikátor keep-alive použijeme aktuální pozici
+                            pass
                     
                     # Přijímání dat od serveru (non-blocking)
                     try:
@@ -101,7 +119,7 @@ async def game_loop():
                         if msg.type == aiohttp.WSMsgType.TEXT:
                             data = json.loads(msg.data)
                             players = data
-                            
+
                             # Měření odezvy serveru
                             if moved:
                                 response_time = (time.time() - start_time) * 1000  # Převod na milisekundy
@@ -111,15 +129,15 @@ async def game_loop():
                                 # Najdeme své ID podle pozice
                                 for pid, pos in players.items():
                                     if isinstance(pos, list) or isinstance(pos, tuple):
-                                        if abs(pos[0] - x) < 5 and abs(pos[1] - y) < 5:
+                                        if abs(pos[0] - x) < 15 and abs(pos[1] - y) < 15:
                                             my_id = pid
                                             print(f"Moje ID: {my_id}")
                                             break
-                            
+
                             # Aktualizace serverové pozice hráče
                             if my_id in players:
                                 server_x, server_y = players[my_id]
-                            
+
                         elif msg.type in (aiohttp.WSMsgType.CLOSED, aiohttp.WSMsgType.ERROR):
                             connected = False
                             status = "Spojení ukončeno"
@@ -127,14 +145,15 @@ async def game_loop():
                     except asyncio.TimeoutError:
                         # Timeout je očekávaný, pokračujeme ve hře
                         pass
-                    
+
                     # Interpolace pozice hráče
-                    x += (server_x - x) * interpolation_factor
-                    y += (server_y - y) * interpolation_factor
+                    if my_id in players:
+                        x += (server_x - x) * interpolation_factor
+                        y += (server_y - y) * interpolation_factor
 
                     # Vykreslení
                     screen.fill(BLACK)
-                    
+
                     # Vykreslení ostatních hráčů
                     for player_id, pos in players.items():
                         if isinstance(pos, list) or isinstance(pos, tuple):
@@ -147,7 +166,7 @@ async def game_loop():
                             else:
                                 # Ostatní hráči jsou zelení
                                 pygame.draw.rect(screen, GREEN, (pos[0], pos[1], 20, 20))
-                    
+
                     # Zobrazení stavu
                     status_color = GREEN if connected else RED
                     status_text = font.render(status, True, status_color)
@@ -159,14 +178,22 @@ async def game_loop():
                         response_text = font.render(f"Odezva: {response_time:.2f} ms", True, YELLOW)
                         screen.blit(response_text, (10, 100))
                     
+                    # FPS počítadlo
+                    fps = clock.get_fps()
+                    fps_text = font.render(f"FPS: {fps:.1f}", True, YELLOW)
+                    screen.blit(fps_text, (10, 130))
+
                     screen.blit(status_text, (10, 10))
                     screen.blit(players_text, (10, 40))
                     screen.blit(my_id_text, (10, 70))
-                    
+
                     pygame.display.flip()
                     clock.tick(30)
-                    await asyncio.sleep(0)  # Umožní asyncio zpracovat další úlohy
-    
+                    
+                    # Přidání malého zpoždění pro umožnění asyncio zpracovat další úlohy
+                    # ale ne příliš dlouhého, aby nezpomalilo hru
+                    await asyncio.sleep(0)
+
     except aiohttp.ClientError as e:
         connected = False
         status = f"Chyba: {str(e)}"
