@@ -34,8 +34,10 @@ my_color = None   # Barva našeho hráče (náhodná)
 connected = False
 status = "Připojování..."
 x, y = random.randint(50, WIDTH-50), random.randint(50, HEIGHT-50)  # Náhodná počáteční pozice
+server_x, server_y = x, y  # Serverová pozice hráče
 speed = 5
 response_time = None  # Proměnná pro měření odezvy serveru
+interpolation_factor = 0.1  # Faktor pro plynulou interpolaci
 
 # Generuj náhodnou barvu pro rozlišení různých instancí na stejném počítači
 r = random.randint(100, 255)
@@ -45,7 +47,7 @@ my_color = (r, g, b)
 
 # WebSocket komunikace a herní smyčka
 async def game_loop():
-    global players, connected, status, x, y, my_id, response_time
+    global players, connected, status, x, y, server_x, server_y, my_id, response_time
     
     # Připojení k serveru
     try:
@@ -114,6 +116,10 @@ async def game_loop():
                                             print(f"Moje ID: {my_id}")
                                             break
                             
+                            # Aktualizace serverové pozice hráče
+                            if my_id in players:
+                                server_x, server_y = players[my_id]
+                            
                         elif msg.type in (aiohttp.WSMsgType.CLOSED, aiohttp.WSMsgType.ERROR):
                             connected = False
                             status = "Spojení ukončeno"
@@ -122,6 +128,10 @@ async def game_loop():
                         # Timeout je očekávaný, pokračujeme ve hře
                         pass
                     
+                    # Interpolace pozice hráče
+                    x += (server_x - x) * interpolation_factor
+                    y += (server_y - y) * interpolation_factor
+
                     # Vykreslení
                     screen.fill(BLACK)
                     
@@ -131,12 +141,9 @@ async def game_loop():
                             # Barva podle toho, zda je to náš hráč nebo jiný
                             if player_id == my_id:
                                 # Pokud je to náš hráč, použijeme svou barvu, která je pro tuto instanci unikátní
-                                pygame.draw.rect(screen, my_color, (pos[0], pos[1], 20, 20))
+                                pygame.draw.rect(screen, my_color, (x, y, 20, 20))
                                 # A ještě ohraničení, aby bylo jasné, který je náš
-                                pygame.draw.rect(screen, WHITE, (pos[0], pos[1], 20, 20), 2)
-                                
-                                # Pro jistotu aktualizujeme svou pozici podle serveru
-                                x, y = pos[0], pos[1]
+                                pygame.draw.rect(screen, WHITE, (x, y, 20, 20), 2)
                             else:
                                 # Ostatní hráči jsou zelení
                                 pygame.draw.rect(screen, GREEN, (pos[0], pos[1], 20, 20))
