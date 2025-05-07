@@ -41,6 +41,7 @@ speed = 5
 response_time = None  # Proměnná pro měření odezvy serveru
 interpolation_factor = 0.1  # Faktor pro plynulou interpolaci
 other_players_interpolation_factor = 0.2  # Faktor pro plynulou interpolaci ostatních hráčů
+is_moving = False  # Nová proměnná pro sledování, zda se hráč hýbe (stisknuté klávesy)
 
 # Pro synchronizaci i při neaktivitě hráče
 last_update_time = 0
@@ -55,7 +56,7 @@ my_color = (r, g, b)
 # WebSocket komunikace a herní smyčka
 async def game_loop():
     global players, players_interpolated, players_prev, connected, status
-    global x, y, server_x, server_y, my_id, response_time, last_update_time
+    global x, y, server_x, server_y, my_id, response_time, last_update_time, is_moving
 
     # Připojení k serveru
     try:
@@ -73,7 +74,7 @@ async def game_loop():
                 running = True
                 while running:
                     # Začátek cyklu - měření času pro FPS
-                    frame_start = time.time()
+                    current_time = time.time()
 
                     # Zpracování událostí
                     for event in pygame.event.get():
@@ -83,6 +84,7 @@ async def game_loop():
                     # Zpracování vstupů
                     keys = pygame.key.get_pressed()
                     moved = False
+                    prev_x, prev_y = x, y  # Uložení původní pozice před zpracováním vstupu
 
                     if keys[pygame.K_w] or keys[pygame.K_UP]:
                         y -= speed
@@ -97,13 +99,18 @@ async def game_loop():
                         x += speed
                         moved = True
 
+                    # Aktualizace stavu pohybu - je hráč v pohybu?
+                    is_moving = moved
+
                     # Omezení pohybu na herní plochu
                     x = max(0, min(WIDTH - 20, x))
                     y = max(0, min(HEIGHT - 20, y))
 
+                    # Pokud se hráč pohnul, aktualizujeme také serverovou pozici pro konzistenci
+                    if moved:
+                        server_x, server_y = x, y
+
                     # Posílání dat serveru
-                    current_time = time.time()
-                    
                     # Posílání dat, pokud se hráč pohnul NEBO vypršel interval pro keep-alive
                     if moved or current_time - last_update_time >= UPDATE_INTERVAL:
                         start_time = time.time()  # Začátek měření času
@@ -136,9 +143,13 @@ async def game_loop():
                                             print(f"Moje ID: {my_id}")
                                             break
 
-                            # Aktualizace serverové pozice hráče
-                            if my_id in players:
+                            # Aktualizace serverové pozice hráče - POUZE když se aktivně pohybujeme
+                            if my_id in players and is_moving:
                                 server_x, server_y = players[my_id]
+                                
+                            # Aktualizace našeho hráče v datech (lokální přepsání)
+                            if my_id:
+                                players[my_id] = [x, y]
                                 
                             # Inicializujeme interpolované pozice, pokud ještě nemáme předchozí data
                             if not players_prev:
@@ -153,19 +164,28 @@ async def game_loop():
                         # Timeout je očekávaný, pokračujeme ve hře
                         pass
 
-                    # Interpolace pozice hráče
-                    if my_id in players:
+                    # Interpolace pozice hráče - POUZE když se hýbeme, jinak zůstává přesně tam, kde je
+                    if my_id in players and is_moving:
+                        # Standardní interpolace
                         x += (server_x - x) * interpolation_factor
                         y += (server_y - y) * interpolation_factor
+                        status = "Připojeno (pohyb)"
+                    else:
+                        status = "Připojeno (stabilní)"
                     
                     # Interpolace pozic ostatních hráčů
                     players_interpolated = {}
                     for player_id, pos in players.items():
                         if isinstance(pos, list) or isinstance(pos, tuple):
-                            if player_id in players_prev and isinstance(players_prev[player_id], (list, tuple)):
-                                # Interpolace mezi předchozí a novou pozicí
+                            if player_id == my_id:
+                                # Pro našeho hráče používáme přesně naši lokální pozici
+                                players_interpolated[player_id] = [x, y]
+                            elif player_id in players_prev and isinstance(players_prev[player_id], (list, tuple)):
+                                # Pro ostatní hráče standardní interpolace
                                 prev_x, prev_y = players_prev[player_id]
                                 new_x, new_y = pos
+                                
+                                # Interpolace pro plynulý pohyb
                                 interpolated_x = prev_x + (new_x - prev_x) * other_players_interpolation_factor
                                 interpolated_y = prev_y + (new_y - prev_y) * other_players_interpolation_factor
                                 players_interpolated[player_id] = [interpolated_x, interpolated_y]
@@ -204,6 +224,15 @@ async def game_loop():
                     fps = clock.get_fps()
                     fps_text = font.render(f"FPS: {fps:.1f}", True, YELLOW)
                     screen.blit(fps_text, (10, 130))
+                    
+                    # Zobrazení pohybového stavu
+                    move_state = "Pohyb" if is_moving else "Stojím"
+                    move_text = font.render(move_state, True, GREEN if not is_moving else YELLOW)
+                    screen.blit(move_text, (10, 160))
+
+                    # Zobrazení lokální a serverové pozice pro debugging
+                    pos_text = font.render(f"Pozice: {x:.1f}, {y:.1f}", True, WHITE)
+                    screen.blit(pos_text, (10, 190))
 
                     screen.blit(status_text, (10, 10))
                     screen.blit(players_text, (10, 40))
