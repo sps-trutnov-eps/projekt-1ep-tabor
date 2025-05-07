@@ -13,7 +13,7 @@ font2 = pygame.font.Font(None, 28)
 screen_width = 800
 screen_height = 600
 screen = pygame.display.set_mode((screen_width, screen_height))
-pygame.display.set_caption("Pygame Hráč - WASD Ovládání")
+pygame.display.set_caption("itemy")
 
 # Barvy
 WHITE = (255, 255, 255)
@@ -89,7 +89,7 @@ class Player:
     def throw_grenade(self, velocity_x, velocity_y):
         current_time = pygame.time.get_ticks()
         if self.grenades > 0 and current_time - self.last_grenade_time >= 3000:
-            thrown_grenade = Grenade_projectile(self.x, self.y, velocity_x, velocity_y)
+            thrown_grenade = Grenade_projectile((self.x + self.size / 2), (self.y + self.size / 2), velocity_x, velocity_y)
             self.grenades -= 1
             self.last_grenade_time = current_time
             return thrown_grenade
@@ -102,9 +102,11 @@ class Medkit:
         self.x = x
         self.y = y
         self.size = size
+        self.image = pygame.image.load("medkit.png").convert_alpha()
         
     def draw(self, screen):
-        pygame.draw.rect(screen, GREEN, (self.x, self.y, self.size, self.size))
+        self.image = pygame.transform.scale(self.image, (self.size, self.size))
+        screen.blit(self.image, (self.x, self.y))
     
     def get_rect(self):
         return pygame.Rect(self.x, self.y, self.size, self.size)
@@ -114,9 +116,11 @@ class Grenade:
         self.x = x
         self.y = y
         self.size = size
+        self.image = pygame.image.load("grenade.png").convert_alpha()
     
     def draw(self, screen):
-        pygame.draw.rect(screen, BLACK, (self.x, self.y, self.size, self.size))
+        self.image = pygame.transform.scale(self.image, (self.size, self.size))
+        screen.blit(self.image, (self.x, self.y))
         
     def get_rect(self):
         return pygame.Rect(self.x, self.y, self.size, self.size)
@@ -132,7 +136,7 @@ class Grenade_projectile:
         self.start_y = y
         self.state = 'moving'
         self.stop_time = 0 
-        self.explosion_radius = 300
+        self.explosion_radius = 500
         self.explosion_damage = 5
         self.explosion_time = 0
         self.explosion_duration = 500
@@ -197,10 +201,18 @@ while running:
             
     keys = pygame.key.get_pressed()
     
-    if keys[pygame.K_SPACE] and player.has_grenade:
-        thrown_grenade = player.throw_grenade(5, -5)
-        if thrown_grenade:
-            thrown_grenades.append(thrown_grenade)
+    if keys[pygame.K_g] and player.has_grenade:
+        mouse_x, mouse_y = pygame.mouse.get_pos()
+        dx = mouse_x - player.x
+        dy = mouse_y - player.y
+        distance = math.sqrt(dx**2 + dy**2)
+        if distance != 0:
+            speed = 8  # síla hodu granátu
+            velocity_x = speed * (dx / distance)
+            velocity_y = speed * (dy / distance)
+            thrown_grenade = player.throw_grenade(velocity_x, velocity_y)
+            if thrown_grenade:
+                thrown_grenades.append(thrown_grenade)
     
     current_time = pygame.time.get_ticks()
     cooldown_time = max(0, 4000 - (current_time - player.last_grenade_time)) // 1000    
