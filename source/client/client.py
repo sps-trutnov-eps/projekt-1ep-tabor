@@ -28,7 +28,9 @@ WHITE = (255, 255, 255)
 YELLOW = (255, 255, 0)
 
 # Globální proměnné
-players = {}      # Data o hráčích
+players = {}      # Data o hráčích ze serveru
+players_interpolated = {}  # Data o hráčích pro vykreslení (interpolovaná)
+players_prev = {}  # Předchozí pozice hráčů pro interpolaci
 my_id = None      # ID našeho hráče přidělené serverem 
 my_color = None   # Barva našeho hráče (náhodná)
 connected = False
@@ -38,6 +40,7 @@ server_x, server_y = x, y  # Serverová pozice hráče
 speed = 5
 response_time = None  # Proměnná pro měření odezvy serveru
 interpolation_factor = 0.1  # Faktor pro plynulou interpolaci
+other_players_interpolation_factor = 0.2  # Faktor pro plynulou interpolaci ostatních hráčů
 
 # Pro synchronizaci i při neaktivitě hráče
 last_update_time = 0
@@ -51,7 +54,8 @@ my_color = (r, g, b)
 
 # WebSocket komunikace a herní smyčka
 async def game_loop():
-    global players, connected, status, x, y, server_x, server_y, my_id, response_time, last_update_time
+    global players, players_interpolated, players_prev, connected, status
+    global x, y, server_x, server_y, my_id, response_time, last_update_time
 
     # Připojení k serveru
     try:
@@ -105,18 +109,16 @@ async def game_loop():
                         start_time = time.time()  # Začátek měření času
                         await ws.send_json({"x": x, "y": y})
                         last_update_time = current_time
-                        
-                        # Pokud se nepohnul, je to keep-alive zpráva
-                        if not moved:
-                            # Také požádáme o aktualizaci pozice ostatních hráčů
-                            # Jako indikátor keep-alive použijeme aktuální pozici
-                            pass
                     
                     # Přijímání dat od serveru (non-blocking)
                     try:
                         # Použití wait_for s timeoutem pro neblokující příjem
                         msg = await asyncio.wait_for(ws.receive(), 0.01)
                         if msg.type == aiohttp.WSMsgType.TEXT:
+                            # Uložíme předchozí pozice hráčů pro interpolaci
+                            players_prev = players_interpolated.copy() if players_interpolated else {}
+                            
+                            # Aktualizujeme data ze serveru
                             data = json.loads(msg.data)
                             players = data
 
@@ -137,6 +139,11 @@ async def game_loop():
                             # Aktualizace serverové pozice hráče
                             if my_id in players:
                                 server_x, server_y = players[my_id]
+                                
+                            # Inicializujeme interpolované pozice, pokud ještě nemáme předchozí data
+                            if not players_prev:
+                                players_prev = players.copy()
+                                players_interpolated = players.copy()
 
                         elif msg.type in (aiohttp.WSMsgType.CLOSED, aiohttp.WSMsgType.ERROR):
                             connected = False
@@ -150,16 +157,31 @@ async def game_loop():
                     if my_id in players:
                         x += (server_x - x) * interpolation_factor
                         y += (server_y - y) * interpolation_factor
+                    
+                    # Interpolace pozic ostatních hráčů
+                    players_interpolated = {}
+                    for player_id, pos in players.items():
+                        if isinstance(pos, list) or isinstance(pos, tuple):
+                            if player_id in players_prev and isinstance(players_prev[player_id], (list, tuple)):
+                                # Interpolace mezi předchozí a novou pozicí
+                                prev_x, prev_y = players_prev[player_id]
+                                new_x, new_y = pos
+                                interpolated_x = prev_x + (new_x - prev_x) * other_players_interpolation_factor
+                                interpolated_y = prev_y + (new_y - prev_y) * other_players_interpolation_factor
+                                players_interpolated[player_id] = [interpolated_x, interpolated_y]
+                            else:
+                                # Pokud nemáme předchozí pozici, použijeme aktuální
+                                players_interpolated[player_id] = pos
 
                     # Vykreslení
                     screen.fill(BLACK)
 
-                    # Vykreslení ostatních hráčů
-                    for player_id, pos in players.items():
+                    # Vykreslení hráčů s interpolovanými pozicemi
+                    for player_id, pos in players_interpolated.items():
                         if isinstance(pos, list) or isinstance(pos, tuple):
                             # Barva podle toho, zda je to náš hráč nebo jiný
                             if player_id == my_id:
-                                # Pokud je to náš hráč, použijeme svou barvu, která je pro tuto instanci unikátní
+                                # Pokud je to náš hráč, použijeme svou barvu a naši pozici
                                 pygame.draw.rect(screen, my_color, (x, y, 20, 20))
                                 # A ještě ohraničení, aby bylo jasné, který je náš
                                 pygame.draw.rect(screen, WHITE, (x, y, 20, 20), 2)
@@ -191,7 +213,6 @@ async def game_loop():
                     clock.tick(30)
                     
                     # Přidání malého zpoždění pro umožnění asyncio zpracovat další úlohy
-                    # ale ne příliš dlouhého, aby nezpomalilo hru
                     await asyncio.sleep(0)
 
     except aiohttp.ClientError as e:
