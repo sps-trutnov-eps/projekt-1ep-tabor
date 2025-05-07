@@ -3,6 +3,7 @@ import asyncio
 import aiohttp
 import json
 import random
+import time  # Přidání modulu pro měření času
 
 # Pro server hostovaný na Render.com použij:
 SERVER_URL = "wss://projekt-1ep-tabor.onrender.com/ws"
@@ -34,6 +35,7 @@ connected = False
 status = "Připojování..."
 x, y = random.randint(50, WIDTH-50), random.randint(50, HEIGHT-50)  # Náhodná počáteční pozice
 speed = 5
+response_time = None  # Proměnná pro měření odezvy serveru
 
 # Generuj náhodnou barvu pro rozlišení různých instancí na stejném počítači
 r = random.randint(100, 255)
@@ -43,7 +45,7 @@ my_color = (r, g, b)
 
 # WebSocket komunikace a herní smyčka
 async def game_loop():
-    global players, connected, status, x, y, my_id
+    global players, connected, status, x, y, my_id, response_time
     
     # Připojení k serveru
     try:
@@ -87,6 +89,7 @@ async def game_loop():
                     
                     # Posílání dat serveru, jen pokud se hráč pohnul
                     if moved:
+                        start_time = time.time()  # Začátek měření času
                         await ws.send_json({"x": x, "y": y})
                     
                     # Přijímání dat od serveru (non-blocking)
@@ -97,6 +100,10 @@ async def game_loop():
                             data = json.loads(msg.data)
                             players = data
                             
+                            # Měření odezvy serveru
+                            if moved:
+                                response_time = (time.time() - start_time) * 1000  # Převod na milisekundy
+
                             # Zjištění našeho ID při prvním příjmu dat
                             if my_id is None:
                                 # Najdeme své ID podle pozice
@@ -139,6 +146,11 @@ async def game_loop():
                     status_text = font.render(status, True, status_color)
                     players_text = font.render(f"Hráči: {len(players)}", True, WHITE)
                     my_id_text = font.render(f"Moje ID: {my_id}", True, my_color)
+
+                    # Zobrazení odezvy serveru
+                    if response_time is not None:
+                        response_text = font.render(f"Odezva: {response_time:.2f} ms", True, YELLOW)
+                        screen.blit(response_text, (10, 100))
                     
                     screen.blit(status_text, (10, 10))
                     screen.blit(players_text, (10, 40))
