@@ -1,153 +1,115 @@
-# Návod k použití pokročilého testovacího klienta
+# Multiplayer Herní Klient
 
-Tento pokročilý testovací klient umožňuje komplexní testování tvého herního WebSocket serveru. Nabízí různé testy a monitorovací funkce, které ti pomohou ověřit správnou funkčnost a výkon serveru.
+Tento projekt obsahuje jednoduchého multiplayer herního klienta, který komunikuje se serverem pomocí WebSocket protokolu. Aplikace umožňuje pohyb hráče v herním prostředí a zobrazuje ostatní připojené hráče v reálném čase.
 
-## Instalace požadavků
+## Serverová architektura
 
-Před použitím klienta potřebuješ nainstalovat potřebné závislosti:
+Klient komunikuje s WebSocket serverem, který je zodpovědný za:
+
+1. Přijímání připojení od klientů
+2. Udržování seznamu aktivních hráčů a jejich pozic
+3. Distribuci aktualizací pozic všem připojeným klientům
+4. Správu odpojených klientů
+
+Server je možné hostovat lokálně nebo využít cloudové služby jako Render.com.
+
+## Instalace
+
+Pro správné fungování klienta potřebujete nainstalovat následující balíčky:
 
 ```bash
-pip install aiohttp
+pip install -r requirements.txt
 ```
 
-## Základní použití
+nebo jednotlivě:
+
+```bash
+pip install pygame==2.5.2
+pip install aiohttp==3.8.5
+pip install asyncio
+```
+
+## Spuštění klienta
+
+Pro spuštění základního klienta:
+
+```bash
+python client.py
+```
+
+V souboru `client.py` můžete nastavit adresu serveru úpravou proměnné `SERVER_URL`:
+
+```python
+# Pro server hostovaný na Render.com:
+SERVER_URL = "wss://projekt-1ep-tabor.onrender.com/ws"
+# Pro lokální server:
+# SERVER_URL = "ws://localhost:5555/ws"
+```
+
+## Ovládání
+
+- Pohyb hráče: šipky nebo klávesy WASD
+- Ukončení hry: zavření okna
+
+## Funkce klienta
+
+1. **Plynulý pohyb hráče**: Implementace interpolace zajišťuje plynulý pohyb hráče na obrazovce.
+2. **Stálé aktualizace ostatních hráčů**: Pozice ostatních hráčů se aktualizují i když se místní hráč nepohybuje.
+3. **Stabilní pozice po zastavení**: Když přestanete mačkat směrové klávesy, váš hráč zůstane stát přesně na místě bez nežádoucích pohybů.
+4. **Měření odezvy serveru**: Klient zobrazuje aktuální latenci komunikace se serverem.
+5. **Zobrazení FPS**: Pro monitorování výkonu aplikace.
+
+## Síťová komunikace
+
+Klient komunikuje se serverem pomocí WebSocket protokolu, což poskytuje:
+- Obousměrnou komunikaci v reálném čase
+- Nízkou latenci
+- Efektivní přenos dat
+
+### Frekvence komunikace
+
+- **Odesílání dat**: 
+  - Při pohybu hráče
+  - Periodicky každých 100 ms jako "keep-alive" (pro aktualizaci stavu ostatních hráčů)
+
+- **Přijímání dat**:
+  - Průběžně v každé iteraci herní smyčky s timeoutem 10 ms
+
+## Diagnostické informace
+
+Na obrazovce klienta se zobrazují užitečné informace:
+- Stav připojení
+- Počet připojených hráčů
+- ID hráče (přiděleno serverem)
+- Odezva serveru (v ms)
+- FPS
+- Stav pohybu
+- Aktuální pozice hráče
+
+## Testování
+
+Pro testování serveru můžete použít pokročilejší testovací nástroje:
+
+```bash
+python test_client.py
+```
+
+nebo výkonnější testovací klient:
 
 ```bash
 python test_client_advanced.py --host projekt-1ep-tabor.onrender.com --test basic
 ```
 
-Klient automaticky použije správný protokol (`ws://` pro lokální testování, `wss://` pro produkci) a přidá endpoint `/ws`.
-
-## Typy testů
-
-Klient nabízí čtyři hlavní typy testů:
-
-### 1. Základní test (`--test basic`)
-
-Simuluje jednoho hráče, který se pohybuje po herní ploše a komunikuje se serverem.
+Pro více informací o možnostech testování spusťte:
 
 ```bash
-python advanced_websocket_client.py --host projekt-1ep-tabor.onrender.com --test basic --moves 30
+python test_client_advanced.py --help
 ```
-
-### 2. Zátěžový test (`--test stress`)
-
-Simuluje více hráčů najednou pro otestování, jak server zvládá větší zátěž.
-
-```bash
-python advanced_websocket_client.py --host projekt-1ep-tabor.onrender.com --test stress --players 10
-```
-
-### 3. Test latence (`--test latency`)
-
-Měří odezvu serveru - jak rychle reaguje na požadavky klienta.
-
-```bash
-python advanced_websocket_client.py --host projekt-1ep-tabor.onrender.com --test latency
-```
-
-### 4. Monitorování (`--test monitor`)
-
-Dlouhodobé sledování dostupnosti a stability serveru.
-
-```bash
-python advanced_websocket_client.py --host projekt-1ep-tabor.onrender.com --test monitor --duration 300 --interval 10
-```
-
-### 5. Všechny testy (`--test all`)
-
-Spustí postupně všechny testy.
-
-```bash
-python advanced_websocket_client.py --host projekt-1ep-tabor.onrender.com --test all
-```
-
-## Další parametry
-
-Klient podporuje řadu dalších parametrů pro přizpůsobení testů:
-
-| Parametr | Popis | Výchozí hodnota |
-|----------|-------|-----------------|
-| `--host` | Adresa serveru | localhost |
-| `--port` | Port serveru (používá se jen pro lokální testování) | 5555 |
-| `--players` | Počet hráčů pro zátěžový test | 3 |
-| `--moves` | Počet pohybů na hráče | 20 |
-| `--delay` | Zpoždění mezi pohyby v sekundách | 0.5 |
-| `--pattern` | Vzor pohybu hráčů (random, circle, square) | random |
-| `--duration` | Doba monitorování v sekundách | 60 |
-| `--interval` | Interval kontrol při monitorování v sekundách | 5 |
-
-## Vzory pohybu
-
-Klient podporuje tři různé vzory pohybu pro hráče:
-
-1. **Náhodný pohyb (`--pattern random`)**
-   - Hráč se pohybuje náhodně po herní ploše
-
-2. **Kruhový pohyb (`--pattern circle`)**
-   - Hráč se pohybuje po kruhové dráze
-   - Užitečné pro vizuální testování a sledování pohybu
-
-3. **Čtvercový pohyb (`--pattern square`)**
-   - Hráč se pohybuje po čtvercové dráze
-   - Vhodné pro testování hranic herní plochy
-
-## Příklady použití
-
-### Lokální testování
-
-```bash
-python advanced_websocket_client.py --host localhost --port 5555 --test basic
-```
-
-### Zátěžový test s 20 hráči pohybujícími se po kruhu
-
-```bash
-python advanced_websocket_client.py --host projekt-1ep-tabor.onrender.com --test stress --players 20 --pattern circle
-```
-
-### 5-minutové monitorování s kontrolou každých 30 sekund
-
-```bash
-python advanced_websocket_client.py --host projekt-1ep-tabor.onrender.com --test monitor --duration 300 --interval 30
-```
-
-### Kompletní test s rychlými pohyby
-
-```bash
-python advanced_websocket_client.py --host projekt-1ep-tabor.onrender.com --test all --delay 0.1
-```
-
-## Interpretace výsledků
-
-### Zátěžový test
-
-Sleduj, zda server zvládá současné připojení více hráčů a zda nedochází k výpadkům nebo zpožděním.
-
-### Test latence
-
-- **Průměrná latence** pod 100ms je vynikající
-- **Průměrná latence** 100-300ms je přijatelná
-- **Průměrná latence** nad 300ms může způsobovat problémy v reálném čase
-
-### Monitorování
-
-Sleduje spolehlivost serveru v čase. Hodnota "Spolehlivost serveru" by měla být co nejblíže 100%.
 
 ## Řešení problémů
 
-### Chyby připojení
+- **Server neodpovídá**: Bezplatné služby na Render.com se uspávají po 15 minutách nečinnosti. Zkuste nejprve otevřít stránku serveru v prohlížeči pro "probuzení" služby.
 
-- Ověř, že server běží
-- Zkontroluj, že používáš správnou adresu serveru
-- Ujisti se, že server má endpoint `/ws`
+- **Vysoká latence**: Na bezplatném plánu Render.com je určitá latence normální. Pro lokální vývoj a testování doporučujeme použít lokální server.
 
-### Vysoká latence
-
-- Na bezplatném plánu Render.com je určitá latence normální
-- Zvyš hodnotu parametru `--delay` pro snížení zatížení serveru
-
-### Server neodpovídá
-
-- Bezplatné služby na Render.com se uspávají po 15 minutách nečinnosti
-- Zkus nejprve otevřít stránku serveru v prohlížeči pro "probuzení" služby
+- **Problémy s připojením**: Ověřte, že server běží a používáte správnou adresu serveru.
