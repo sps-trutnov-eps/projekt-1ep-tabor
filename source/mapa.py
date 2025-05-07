@@ -16,6 +16,7 @@ DARK_GREEN = (0, 80, 0)
 DARKER_GREEN = (0, 50, 0)
 RED = (255, 0, 0)
 BLUE = (0, 0, 255)
+WHITE = (255, 255, 255)
  
 # Konstanty
 TILE_SIZE = 40
@@ -23,7 +24,43 @@ BOUNDARY_WIDTH = 5
 PLAYER_SPEED = 4
 MAP_WIDTH = 100
 MAP_HEIGHT = 100
-PLAYER_SIZE_MULTIPLIER = 2.5  # Pevně nastavená velikost hráče na 3x
+PLAYER_SIZE_MULTIPLIER = 2.5  # Pevně nastavená velikost hráče na 2.5x
+
+# Weapons configuration
+WEAPONS = {
+    "Crossbow": {
+        "image": "Crossbow_Gun.png",
+        "scale": 0.355,
+        "offset_x": 20,
+        "offset_y": 10,
+        "damage": 25,
+        "cooldown": 30
+    },
+    "Rocket Launcher": {
+        "image": "RocketLauncher_Gun.png",
+        "scale": 0.2,
+        "offset_x": 25,
+        "offset_y": 15,
+        "damage": 50,
+        "cooldown": 60
+    },
+    "Shotgun": {
+        "image": "Shotgun_Gun.png",
+        "scale": 0.4,
+        "offset_x": 20,
+        "offset_y": 10,
+        "damage": 35,
+        "cooldown": 45
+    },
+    "Sniper": {
+        "image": "Sniper_Gun.png",
+        "scale": 0.2,
+        "offset_x": 30,
+        "offset_y": 10,
+        "damage": 75,
+        "cooldown": 90
+    }
+}
  
 # Vytvoření složky pro obrázky, pokud neexistuje
 if not os.path.exists("images"):
@@ -43,9 +80,35 @@ except Exception as e:
     pygame.draw.circle(player_surface, RED, (player_size//2, player_size//2), player_size//2 - 2)
     player_texture = player_surface
     print("Použita výchozí textura hráče")
+
+# Načítání zbraní
+weapon_textures = {}
+for name, weapon_info in WEAPONS.items():
+    try:
+        weapon_path = os.path.join("gun", weapon_info["image"])
+        original_texture = pygame.image.load(weapon_path).convert_alpha()
+        
+        # Calculate scaled dimensions
+        scale = weapon_info["scale"]
+        width = int(original_texture.get_width() * scale)
+        height = int(original_texture.get_height() * scale)
+        
+        # Scale the weapon texture
+        weapon_textures[name] = pygame.transform.scale(original_texture, (width, height))
+        print(f"Zbraň '{name}' úspěšně načtena")
+    except Exception as e:
+        print(f"Chyba při načítání zbraně '{name}': {e}")
+        # Create placeholder texture
+        placeholder = pygame.Surface((40, 15), pygame.SRCALPHA)
+        pygame.draw.rect(placeholder, (200, 200, 200), (0, 0, 40, 15))
+        weapon_textures[name] = placeholder
  
 # Inicializace herních proměnných
 images = []  # Seznam všech obrazových objektů na mapě
+current_weapon_index = 0
+weapon_names = list(WEAPONS.keys())
+current_weapon = weapon_names[current_weapon_index]
+weapon_cooldowns = {name: 0 for name in WEAPONS}
  
 # Inicializace hráče
 player_x = MAP_WIDTH // 2 * TILE_SIZE + TILE_SIZE // 2
@@ -159,17 +222,13 @@ def draw_map(screen, camera_x, camera_y):
             screen_x = (img['x'] * TILE_SIZE - camera_x) + SCREEN_WIDTH // 2
             screen_y = (img['y'] * TILE_SIZE - camera_y) + SCREEN_HEIGHT // 2
             screen.blit(img['image'], (int(screen_x), int(screen_y)))
- 
-# Funkce pro vykreslení hráče
+
+# Funkce pro vykreslení hráče a zbraně
 def draw_player(screen, offset_x, offset_y):
     screen_x = int(player_x - offset_x + SCREEN_WIDTH // 2)
     screen_y = int(player_y - offset_y + SCREEN_HEIGHT // 2)
    
     if player_texture:
-        # Vykreslení textury hráče (pro oba týmy)
-        texture_x = screen_x - player_size // 2
-        texture_y = screen_y - player_size // 2
-        
         # Vytvoření kopie textury pro rotaci
         texture_to_draw = player_texture
         
@@ -186,10 +245,55 @@ def draw_player(screen, offset_x, offset_y):
         
         # Vykreslení rotované textury
         screen.blit(rotated_texture, rot_rect.topleft)
+        
+        # Vykreslení aktuální zbraně
+        if current_weapon in weapon_textures:
+            # Get weapon information
+            weapon_info = WEAPONS[current_weapon]
+            weapon_texture = weapon_textures[current_weapon]
+            
+            # Calculate weapon position relative to player
+            angle_rad = math.radians(player_angle - 90)  # Convert to radians and adjust for rotation
+            offset_distance = weapon_info["offset_x"]
+            
+            # Calculate offset position (perpendicular to player angle)
+            weapon_offset_x = math.cos(angle_rad) * offset_distance
+            weapon_offset_y = math.sin(angle_rad) * offset_distance
+            
+            # Position for the weapon
+            weapon_x = screen_x + weapon_offset_x
+            weapon_y = screen_y + weapon_offset_y
+            
+            # Rotate weapon texture to match player angle
+            rotated_weapon = pygame.transform.rotate(weapon_texture, -player_angle)
+            weapon_rect = rotated_weapon.get_rect(center=(weapon_x, weapon_y))
+            
+            # Draw weapon
+            screen.blit(rotated_weapon, weapon_rect.topleft)
     else:
         # Záloha - kruh pro případ, že by textura nebyla k dispozici
         color = RED if player_team == 2 else BLUE
         pygame.draw.circle(screen, color, (screen_x, screen_y), player_radius)
+
+# Funkce pro vykreslení UI
+def draw_ui(screen, font):
+    # Vykreslení zbraně v levém dolním rohu
+    weapon_info_bg = pygame.Rect(10, SCREEN_HEIGHT - 60, 300, 50)
+    pygame.draw.rect(screen, (0, 0, 0, 128), weapon_info_bg)
+    
+    # Zobrazení jména zbraně
+    weapon_text = font.render(f"Weapon: {current_weapon}", True, WHITE)
+    screen.blit(weapon_text, (20, SCREEN_HEIGHT - 50))
+    
+    # Vykreslení cooldownu zbraně
+    cooldown = weapon_cooldowns[current_weapon]
+    cooldown_max = WEAPONS[current_weapon]["cooldown"]
+    cooldown_text = font.render(f"Cooldown: {cooldown}/{cooldown_max}", True, WHITE)
+    screen.blit(cooldown_text, (20, SCREEN_HEIGHT - 30))
+    
+    # Instrukce pro přepínání zbraní
+    instructions = font.render("Mouse Wheel to change weapons, LMB to shoot", True, WHITE)
+    screen.blit(instructions, (20, 60))
  
 # Funkce pro získání aktuální pozice hráče v dlaždicích
 def get_player_tile_position():
@@ -203,13 +307,37 @@ def calculate_angle_to_mouse(player_screen_x, player_screen_y):
     angle = math.degrees(math.atan2(dy, dx)) + 90
     return angle
 
+# Funkce pro střelbu ze zbraně
+def shoot(weapon_name):
+    global weapon_cooldowns
+    
+    # Kontrola cooldownu
+    if weapon_cooldowns[weapon_name] > 0:
+        return False
+    
+    # Nastavení cooldownu zbraně
+    weapon_cooldowns[weapon_name] = WEAPONS[weapon_name]["cooldown"]
+    
+    # Zde by mohla být implementace střelby s efekty, projektily, atd.
+    print(f"Střelba ze zbraně: {weapon_name}, poškození: {WEAPONS[weapon_name]['damage']}")
+    
+    return True
+
+# Funkce pro změnu zbraně
+def change_weapon(direction):
+    global current_weapon_index, current_weapon
+    
+    current_weapon_index = (current_weapon_index + direction) % len(weapon_names)
+    current_weapon = weapon_names[current_weapon_index]
+    print(f"Zbraň změněna na: {current_weapon}")
+
 # Hlavní herní smyčka
 def main():
-    global player_x, player_y, player_angle
+    global player_x, player_y, player_angle, current_weapon, current_weapon_index, weapon_cooldowns
    
     running = True
     clock = pygame.time.Clock()
-    font = pygame.font.SysFont(None, 36)
+    font = pygame.font.SysFont(None, 24)
    
     while running:
         # Měření FPS
@@ -222,6 +350,15 @@ def main():
             elif event.type == pygame.KEYDOWN and event.key == pygame.K_t:
                 player_tile_x, player_tile_y = get_player_tile_position()
                 add_image("images/tree1.png", player_tile_x + 2, player_tile_y + 2, 2.0)
+            elif event.type == pygame.MOUSEBUTTONDOWN:
+                # Levé tlačítko myši pro střelbu
+                if event.button == 1:
+                    shoot(current_weapon)
+                # Kolečko myši pro změnu zbraně
+                elif event.button == 4:  # Scroll nahoru
+                    change_weapon(1)
+                elif event.button == 5:  # Scroll dolů
+                    change_weapon(-1)
        
         # Pohyb hráče pomocí kláves
         keys = pygame.key.get_pressed()
@@ -244,13 +381,21 @@ def main():
         player_screen_x = int(SCREEN_WIDTH // 2)
         player_screen_y = int(SCREEN_HEIGHT // 2)
         player_angle = calculate_angle_to_mouse(player_screen_x, player_screen_y)
+        
+        # Aktualizace cooldownů zbraní
+        for weapon in weapon_cooldowns:
+            if weapon_cooldowns[weapon] > 0:
+                weapon_cooldowns[weapon] -= 1
        
         # Vykreslení
         draw_map(screen, player_x, player_y)
         draw_player(screen, player_x, player_y)
+        
+        # Vykreslení UI
+        draw_ui(screen, font)
        
-        # Zobrazení pouze FPS
-        fps_text = font.render(f"FPS: {int(fps)}", True, (255, 255, 255))
+        # Zobrazení FPS
+        fps_text = font.render(f"FPS: {int(fps)}", True, WHITE)
         screen.blit(fps_text, (10, 10))
        
         pygame.display.flip()
