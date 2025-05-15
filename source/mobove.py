@@ -44,26 +44,47 @@ def spawn_jelen():
         'target_x': x,
         'target_y': y,
         'wait_timer': random.randint(0, 300),
-        'speed': random.uniform(1.0, 2.0),  # Rychlost každého jelena
+        'speed': random.uniform(1.0, 2.5),  # Zvýšená maximální rychlost
         'is_fleeing': False,  # Příznak, zda jelen utíká
         'fleeing_timer': 0,  # Časovač útěku
-        'flee_speed_multiplier': 1.5  # Násobitel rychlosti při útěku
+        'flee_speed_multiplier': 1.8,  # Zvýšený násobitel rychlosti při útěku
+        'movement_style': random.choice(['normal', 'zigzag', 'circular']),  # Styl pohybu
+        'wiggle_factor': random.uniform(0.2, 0.8),  # Faktor klikatosti pohybu
+        'direction_change_timer': 0,  # Časovač pro náhodnou změnu směru
+        'grazing': False,  # Příznak, zda se jelen pase
+        'grazing_timer': 0,  # Časovač pasení
+        'state': 'idle',  # Stav jelena: idle, walking, grazing, fleeing
+        'state_timer': random.randint(60, 180)  # Časovač pro změnu stavu
     })
 
 def pohni_jeleny():
     for jelen in jeleni:
-        # Aktualizace časovače útěku
+        # Aktualizace časovačů
         if jelen['fleeing_timer'] > 0:
             jelen['fleeing_timer'] -= 1
             if jelen['fleeing_timer'] <= 0:
                 jelen['is_fleeing'] = False
-
+                jelen['state'] = 'walking'
+                jelen['state_timer'] = random.randint(180, 300)
+                
+        if jelen['direction_change_timer'] > 0:
+            jelen['direction_change_timer'] -= 1
+            
+        if jelen['state_timer'] > 0:
+            jelen['state_timer'] -= 1
+            
+        if jelen['grazing_timer'] > 0:
+            jelen['grazing_timer'] -= 1
+            if jelen['grazing_timer'] <= 0:
+                jelen['grazing'] = False
+                
         # Kontrola blízkosti hráče - aktivace útěku
         vzdalenost = math.hypot(jelen['x'] - player_x, jelen['y'] - player_y)
         if vzdalenost < UTOK_VZDALENOST:
             if not jelen['is_fleeing']:  # Začni utíkat pouze pokud ještě neutíká
                 jelen['is_fleeing'] = True
-                jelen['fleeing_timer'] = random.randint(60, 120)
+                jelen['state'] = 'fleeing'
+                jelen['fleeing_timer'] = random.randint(120, 240)  # Delší útěk
                 
                 # Vypočítej směr útěku - pryč od hráče
                 utek_x = jelen['x'] - player_x
@@ -71,9 +92,13 @@ def pohni_jeleny():
                 utek_dist = math.hypot(utek_x, utek_y) or 1
                 
                 # Nastav nový cíl jako směr útěku
-                flee_distance = random.randint(200, 300)  # Náhodná vzdálenost útěku
+                flee_distance = random.randint(300, 500)  # Větší vzdálenost útěku
                 jelen['target_x'] = jelen['x'] + (utek_x / utek_dist) * flee_distance
                 jelen['target_y'] = jelen['y'] + (utek_y / utek_dist) * flee_distance
+                
+                # Přidej náhodnou odchylku ve směru útěku
+                jelen['target_x'] += random.randint(-100, 100)
+                jelen['target_y'] += random.randint(-100, 100)
                 
                 # Omez cíl na hranice mapy
                 jelen['target_x'] = max(MIN_X, min(MAX_X, jelen['target_x']))
@@ -81,9 +106,56 @@ def pohni_jeleny():
                 
                 jelen['wait_timer'] = 0  # Okamžitě začni utíkat
         
-        # Pokud jelen čeká, zmenši timer
-        if jelen['wait_timer'] > 0:
-            jelen['wait_timer'] -= 1
+        # Správa stavů jelena
+        if jelen['state_timer'] <= 0 and not jelen['is_fleeing']:
+            # Náhodná změna stavu
+            if jelen['state'] == 'idle':
+                jelen['state'] = random.choice(['walking', 'grazing'])
+                if jelen['state'] == 'walking':
+                    # Nastav nový cíl pro pohyb
+                    offset_x = random.randint(-200, 200)
+                    offset_y = random.randint(-200, 200)
+                    jelen['target_x'] = max(MIN_X, min(MAX_X, jelen['x'] + offset_x))
+                    jelen['target_y'] = max(MIN_Y, min(MAX_Y, jelen['y'] + offset_y))
+                    jelen['movement_style'] = random.choice(['normal', 'zigzag', 'circular'])
+                    jelen['state_timer'] = random.randint(180, 300)
+                else:  # grazing
+                    jelen['grazing'] = True
+                    jelen['grazing_timer'] = random.randint(300, 600)
+                    jelen['state_timer'] = random.randint(300, 600)
+            elif jelen['state'] == 'walking':
+                jelen['state'] = random.choice(['idle', 'grazing'])
+                jelen['state_timer'] = random.randint(120, 240)
+                if jelen['state'] == 'grazing':
+                    jelen['grazing'] = True
+                    jelen['grazing_timer'] = random.randint(300, 600)
+            elif jelen['state'] == 'grazing':
+                jelen['state'] = random.choice(['idle', 'walking'])
+                jelen['grazing'] = False
+                if jelen['state'] == 'walking':
+                    # Nastav nový cíl pro pohyb
+                    offset_x = random.randint(-200, 200)
+                    offset_y = random.randint(-200, 200)
+                    jelen['target_x'] = max(MIN_X, min(MAX_X, jelen['x'] + offset_x))
+                    jelen['target_y'] = max(MIN_Y, min(MAX_Y, jelen['y'] + offset_y))
+                    jelen['movement_style'] = random.choice(['normal', 'zigzag', 'circular'])
+                    jelen['state_timer'] = random.randint(180, 300)
+                else:
+                    jelen['state_timer'] = random.randint(120, 240)
+        
+        # Pokud jelen čeká nebo se pase, proveď pouze malé pohyby
+        if jelen['state'] == 'idle' and not jelen['is_fleeing']:
+            # Občas udělej malý pohyb i při stání
+            if random.random() < 0.05:
+                jelen['x'] += random.uniform(-0.5, 0.5)
+                jelen['y'] += random.uniform(-0.5, 0.5)
+            continue
+        
+        if jelen['grazing'] and not jelen['is_fleeing']:
+            # Při pasení dělej malé náhodné pohyby
+            if random.random() < 0.1:
+                jelen['x'] += random.uniform(-1.0, 1.0)
+                jelen['y'] += random.uniform(-1.0, 1.0)
             continue
             
         # Výpočet směru pohybu k cíli
@@ -92,25 +164,67 @@ def pohni_jeleny():
         dist = math.hypot(dx, dy)
             
         # Pokud je jelen dost blízko cíli a neutíká, začni čekat a vyber nové místo
-        if dist < 3 and not jelen['is_fleeing']:
-            jelen['wait_timer'] = 300  # cca 5 sekund při 60 FPS
-            offset_x = random.randint(-100, 100)
-            offset_y = random.randint(-100, 100)
-            jelen['target_x'] = max(MIN_X, min(MAX_X, jelen['x'] + offset_x))
-            jelen['target_y'] = max(MIN_Y, min(MAX_Y, jelen['y'] + offset_y))
+        if dist < 5 and not jelen['is_fleeing']:
+            jelen['state'] = 'idle'
+            jelen['state_timer'] = random.randint(120, 240)
+            # Možná přejdi rovnou do pasení
+            if random.random() < 0.3:
+                jelen['state'] = 'grazing'
+                jelen['grazing'] = True
+                jelen['grazing_timer'] = random.randint(300, 600)
+                jelen['state_timer'] = random.randint(300, 600)
         else:
             # Pohyb směrem k cíli
             if dist > 0:  # Prevence dělení nulou
                 dx /= dist
                 dy /= dist
                 
+                # Aplikuj různé styly pohybu
+                if jelen['movement_style'] == 'zigzag' and not jelen['is_fleeing']:
+                    # Klikatý pohyb - přidej náhodnou odchylku kolmo ke směru
+                    perp_x = -dy * jelen['wiggle_factor'] * math.sin(pygame.time.get_ticks() / 200)
+                    perp_y = dx * jelen['wiggle_factor'] * math.sin(pygame.time.get_ticks() / 200)
+                    dx += perp_x
+                    dy += perp_y
+                elif jelen['movement_style'] == 'circular' and not jelen['is_fleeing']:
+                    # Krouživý pohyb - přidej rotující odchylku
+                    angle = pygame.time.get_ticks() / 500
+                    perp_x = -dy * jelen['wiggle_factor'] * math.sin(angle)
+                    perp_y = dx * jelen['wiggle_factor'] * math.sin(angle)
+                    dx += perp_x
+                    dy += perp_y
+                
+                # Náhodné malé odchylky pro přirozenější pohyb
+                if random.random() < 0.1 and not jelen['is_fleeing']:
+                    dx += random.uniform(-0.2, 0.2)
+                    dy += random.uniform(-0.2, 0.2)
+                
+                # Náhodná větší změna směru občas
+                if jelen['direction_change_timer'] <= 0 and random.random() < 0.01 and not jelen['is_fleeing']:
+                    jelen['direction_change_timer'] = random.randint(30, 60)
+                    dx += random.uniform(-0.5, 0.5)
+                    dy += random.uniform(-0.5, 0.5)
+                
+                # Normalizuj směr po všech úpravách
+                magnitude = math.hypot(dx, dy) or 1
+                dx /= magnitude
+                dy /= magnitude
+                
                 # Základní rychlost + bonus při útěku
                 current_speed = jelen['speed']
                 if jelen['is_fleeing']:
                     current_speed *= jelen['flee_speed_multiplier']
+                elif jelen['state'] == 'walking':
+                    # Občas zrychli nebo zpomal při normální chůzi
+                    if random.random() < 0.05:
+                        current_speed *= random.uniform(0.8, 1.2)
                     
                 jelen['x'] += dx * current_speed
                 jelen['y'] += dy * current_speed
+                
+                # Zajistí, že jelen zůstane v hranicích mapy
+                jelen['x'] = max(MIN_X, min(MAX_X, jelen['x']))
+                jelen['y'] = max(MIN_Y, min(MAX_Y, jelen['y']))
 
 # Main loop
 clock = pygame.time.Clock()
@@ -158,10 +272,14 @@ while True:
         screen_x = jelen['x'] - player_x + ROZLISENI_OKNA_X // 2
         screen_y = jelen['y'] - player_y + ROZLISENI_OKNA_Y // 2
         
-        # Změna barvy jelena, když utíká
+        # Změna barvy jelena podle stavu
         barva = jelen_barva
         if jelen['is_fleeing']:
             barva = (200, 75, 0)  # Světlejší barva při útěku
+        elif jelen['grazing']:
+            barva = (120, 60, 0)  # Tmavší barva při pasení
+        elif jelen['state'] == 'idle':
+            barva = (140, 70, 0)  # Mírně odlišná barva při stání
             
         pygame.draw.circle(okno, barva, (int(screen_x), int(screen_y)), jelen_velikost)
     
