@@ -24,6 +24,22 @@ async def handle_websocket(request):
     try:
         # Registrace nového klienta
         CLIENTS[client_id] = (100, 100)  # Startovní pozice
+        
+        if "projectile" in data:
+            # Přepošleme projektil všem klientům (včetně původního)
+            for other_ws in WEBSOCKET_CONNECTIONS:
+                if other_ws.closed:
+                    continue
+                try:
+                    await other_ws.send_json({
+                        "projectile_broadcast": {
+                            "owner": client_id,
+                            **data["projectile"]
+                        }
+                    })
+                except:
+                    pass
+
         WEBSOCKET_CONNECTIONS.add(ws)
         
         print(f"[NEW CONNECTION] WebSocket klient {client_id} připojen")
