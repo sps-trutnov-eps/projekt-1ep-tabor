@@ -403,6 +403,73 @@ def shoot(weapon_name):
     
     return True
 
+class Medkit:
+    def __init__(self, x=0, y=0, size=80):
+        self.x = x  # Pozice v herním světě (ne na obrazovce)
+        self.y = y  # Pozice v herním světě (ne na obrazovce)
+        self.size = size
+        # Načtení obrázku medkitu
+        try:
+            self.image = pygame.image.load("images/medkit.png").convert_alpha()
+            self.image = pygame.transform.scale(self.image, (size, size))
+        except Exception as e:
+            print(f"Chyba při načítání medkitu: {e}")
+            # Vytvoření záložního obrázku, pokud se načtení nezdaří
+            self.image = pygame.Surface((size, size), pygame.SRCALPHA)
+            pygame.draw.rect(self.image, (255, 0, 0), (0, 0, size, size))
+            pygame.draw.rect(self.image, (255, 255, 255), (size//4, size//4, size//2, size//2))
+            pygame.draw.line(self.image, (255, 255, 255), (size//2, size//4), (size//2, size*3//4), 3)
+    
+    def draw(self, screen, camera_x, camera_y):
+        # Přepočet pozice v herním světě na pozici na obrazovce s ohledem na kameru
+        screen_x = int(self.x - camera_x + SCREEN_WIDTH // 2)
+        screen_y = int(self.y - camera_y + SCREEN_HEIGHT // 2)
+        
+        # Vykreslení medkitu pouze pokud je viditelný na obrazovce
+        if (-self.size <= screen_x <= SCREEN_WIDTH + self.size and 
+            -self.size <= screen_y <= SCREEN_HEIGHT + self.size):
+            screen.blit(self.image, (screen_x - self.size // 2, screen_y - self.size // 2))
+    
+    def get_rect(self):
+        # Vrátí obdélník pro detekci kolizí v souřadnicích herního světa
+        return pygame.Rect(self.x - self.size // 2, self.y - self.size // 2, self.size, self.size)
+
+# Funkce pro kontrolu kolize hráče s medkitem
+def check_medkit_collision(player_x, player_y, player_radius):
+    player_rect = pygame.Rect(player_x - player_radius, player_y - player_radius, 
+                             player_radius * 2, player_radius * 2)
+    
+    for medkit in medkits:
+        if player_rect.colliderect(medkit.get_rect()):
+            # Přidání zdraví (zde byste přidali kód pro zvýšení zdraví hráče)
+            print("+10 životů")
+            
+            # Přesunutí medkitu na novou náhodnou pozici
+            # Použijeme dlaždice pro lepší umístění (mimo zdi a objekty)
+            new_tile_x = random.randint(BOUNDARY_WIDTH + 2, MAP_WIDTH - BOUNDARY_WIDTH - 2)
+            new_tile_y = random.randint(BOUNDARY_WIDTH + 2, MAP_HEIGHT - BOUNDARY_WIDTH - 2)
+            
+            # Převedení pozice dlaždice na pozici v herním světě
+            medkit.x = new_tile_x * TILE_SIZE + TILE_SIZE // 2
+            medkit.y = new_tile_y * TILE_SIZE + TILE_SIZE // 2
+            
+            return True
+    return False
+    
+# Nastavení itemů
+medkits = []
+for _ in range(5):  # Vytvoří 5 medkitů rozptýlených po mapě
+    # Náhodná pozice (v dlaždicích)
+    tile_x = random.randint(BOUNDARY_WIDTH + 2, MAP_WIDTH - BOUNDARY_WIDTH - 2)
+    tile_y = random.randint(BOUNDARY_WIDTH + 2, MAP_HEIGHT - BOUNDARY_WIDTH - 2)
+    
+    # Převod na pozici v pixelech (střed dlaždice)
+    medkit_x = tile_x * TILE_SIZE + TILE_SIZE // 2
+    medkit_y = tile_y * TILE_SIZE + TILE_SIZE // 2
+    
+    # Přidání medkitu do seznamu
+    medkits.append(Medkit(medkit_x, medkit_y, 30))
+
 # Funkce pro změnu zbraně
 def change_weapon(direction):
     global current_weapon_index, current_weapon
@@ -472,6 +539,8 @@ async def game_loop():
                     # Provedení pohybu
                     if moved:
                         move_player(dx, dy)
+                    
+                        check_medkit_collision(player_x, player_y, player_radius)
 
                     # Výpočet úhlu mezi hráčem a kurzorem myši
                     player_screen_x = int(SCREEN_WIDTH // 2)
@@ -558,6 +627,10 @@ async def game_loop():
                     draw_map(screen, player_x, player_y)
                     draw_player(screen, player_x, player_y)
                     draw_other_players(screen, player_x, player_y)
+                    
+                    # Vykreslení itemů
+                    for medkit_inst in medkits:
+                        medkit_inst.draw(screen, player_x, player_y)
                     
                     # Vykreslení UI
                     draw_ui(screen, font)
