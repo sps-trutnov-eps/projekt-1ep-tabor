@@ -26,16 +26,19 @@ clock = pygame.time.Clock()
 BLACK = (0, 0, 0)
 DARK_GREEN = (0, 80, 0)
 DARKER_GREEN = (0, 50, 0)
+VERY_DARK_GREEN = (0, 30, 0) # New very dark green for the outline
 GREEN = (0, 255, 0)
 RED = (255, 0, 0)
 BLUE = (0, 0, 255)
 WHITE = (255, 255, 255)
 YELLOW = (255, 255, 0)
+BROWN = (139, 69, 19) # Brown color for branches (no longer used for drawing, but kept in constants)
 
-# Keř specific colors
-BUSH_GREEN = (45, 160, 45)  # středně zelená
-LIGHT_GREEN = (75, 200, 75)
-YELLOW_GREEN = (150, 220, 50)
+# Keř specific colors - Updated
+BUSH_GREEN = (40, 100, 40) # Unified color for all bush squares
+
+# BUSH_SHADES is no longer used for stable square assignment, but can still be used for particles if desired
+BUSH_PARTICLE_SHADES = [BUSH_GREEN, (30, 85, 30)] # Combining new shades with a middle one
 
 # Konstanty pro herní mapu
 TILE_SIZE = 40
@@ -163,10 +166,80 @@ for name, weapon_info in WEAPONS.items():
 
 # Keř variables
 bush_pos = [MAP_WIDTH // 2 * TILE_SIZE + TILE_SIZE // 2, MAP_HEIGHT // 2 * TILE_SIZE + TILE_SIZE // 2 - 100]  # pozice keře - updated to world coords
-bush_block_size = player_radius * 1.5  # velikost jednotlivý blocků
+bush_collision_radius = player_radius * 1.25 # Effective radius for collision detection (50% smaller)
 player_hidden = False  # nový stav - jestli je hráč schovaný
 hide_pressed = False  # pro tracking E klávesy
 player_prev_pos = [player_x, player_y] # Initial value for collision
+
+# Global variable to store bush square segment data with stable colors
+bush_squares_data = []
+
+# Function to initialize bush squares with stable random colors
+def init_bush_squares():
+    global bush_squares_data
+    bush_squares_data = [] # Reset it to ensure stability on re-init if ever called again
+    bush_collision_radius_effective = bush_collision_radius # Use the updated bush_collision_radius
+
+    # Define base square offsets and sizes (relative to center of the bush)
+    # These definitions are adjusted to create a more organic, bushy shape.
+    # More varied offsets and sizes, with some overlaps to avoid gaps and make it look dense.
+    square_definitions = [
+        # Central dense parts
+        (0, 0, bush_collision_radius_effective * 1.3),
+        (bush_collision_radius_effective * 0.4, bush_collision_radius_effective * 0.1, bush_collision_radius_effective * 1.0),
+        (-bush_collision_radius_effective * 0.4, bush_collision_radius_effective * 0.1, bush_collision_radius_effective * 1.0),
+        (0, bush_collision_radius_effective * 0.5, bush_collision_radius_effective * 0.9),
+        (0, -bush_collision_radius_effective * 0.5, bush_collision_radius_effective * 0.9),
+
+        # More irregular mid-range parts
+        (bush_collision_radius_effective * 0.7, bush_collision_radius_effective * 0.3, bush_collision_radius_effective * 0.8),
+        (-bush_collision_radius_effective * 0.7, bush_collision_radius_effective * 0.3, bush_collision_radius_effective * 0.8),
+        (bush_collision_radius_effective * 0.3, bush_collision_radius_effective * 0.7, bush_collision_radius_effective * 0.8),
+        (-bush_collision_radius_effective * 0.3, bush_collision_radius_effective * 0.7, bush_collision_radius_effective * 0.8),
+        (bush_collision_radius_effective * 0.7, -bush_collision_radius_effective * 0.3, bush_collision_radius_effective * 0.8),
+        (-bush_collision_radius_effective * 0.7, -bush_collision_radius_effective * 0.3, bush_collision_radius_effective * 0.8),
+        (bush_collision_radius_effective * 0.3, -bush_collision_radius_effective * 0.7, bush_collision_radius_effective * 0.8),
+        (-bush_collision_radius_effective * 0.3, -bush_collision_radius_effective * 0.7, bush_collision_radius_effective * 0.8),
+
+        # Outer, more sparse and varied pieces
+        (bush_collision_radius_effective * 1.0, 0, bush_collision_radius_effective * 0.6),
+        (-bush_collision_radius_effective * 1.0, 0, bush_collision_radius_effective * 0.6),
+        (0, bush_collision_radius_effective * 1.0, bush_collision_radius_effective * 0.6),
+        (0, -bush_collision_radius_effective * 1.0, bush_collision_radius_effective * 0.6),
+        
+        (bush_collision_radius_effective * 0.8, bush_collision_radius_effective * 0.8, bush_collision_radius_effective * 0.7),
+        (-bush_collision_radius_effective * 0.8, bush_collision_radius_effective * 0.8, bush_collision_radius_effective * 0.7),
+        (bush_collision_radius_effective * 0.8, -bush_collision_radius_effective * 0.8, bush_collision_radius_effective * 0.7),
+        (-bush_collision_radius_effective * 0.8, -bush_collision_radius_effective * 0.8, bush_collision_radius_effective * 0.7),
+
+        # Even more small, irregular pieces to fill gaps and add density
+        (bush_collision_radius_effective * 0.6, bush_collision_radius_effective * 0.9, bush_collision_radius_effective * 0.5),
+        (-bush_collision_radius_effective * 0.6, bush_collision_radius_effective * 0.9, bush_collision_radius_effective * 0.5),
+        (bush_collision_radius_effective * 0.9, bush_collision_radius_effective * 0.6, bush_collision_radius_effective * 0.5),
+        (-bush_collision_radius_effective * 0.9, bush_collision_radius_effective * 0.6, bush_collision_radius_effective * 0.5),
+
+        (bush_collision_radius_effective * 0.5, -bush_collision_radius_effective * 0.9, bush_collision_radius_effective * 0.5),
+        (-bush_collision_radius_effective * 0.5, -bush_collision_radius_effective * 0.9, bush_collision_radius_effective * 0.5),
+        (bush_collision_radius_effective * 0.9, -bush_collision_radius_effective * 0.5, bush_collision_radius_effective * 0.5),
+        (-bush_collision_radius_effective * 0.9, -bush_collision_radius_effective * 0.5, bush_collision_radius_effective * 0.5),
+
+        # Additional scattered smaller pieces for more irregularity
+        (bush_collision_radius_effective * 0.2, bush_collision_radius_effective * 1.1, bush_collision_radius_effective * 0.4),
+        (-bush_collision_radius_effective * 0.2, bush_collision_radius_effective * 1.1, bush_collision_radius_effective * 0.4),
+        (bush_collision_radius_effective * 1.1, bush_collision_radius_effective * 0.2, bush_collision_radius_effective * 0.4),
+        (-bush_collision_radius_effective * 1.1, bush_collision_radius_effective * 0.2, bush_collision_radius_effective * 0.4),
+        (bush_collision_radius_effective * 0.9, -bush_collision_radius_effective * 0.1, bush_collision_radius_effective * 0.5),
+        (-bush_collision_radius_effective * 0.9, -bush_collision_radius_effective * 0.1, bush_collision_radius_effective * 0.5),
+        (bush_collision_radius_effective * 0.1, -bush_collision_radius_effective * 0.9, bush_collision_radius_effective * 0.5),
+        (-bush_collision_radius_effective * 0.1, -bush_collision_radius_effective * 0.9, bush_collision_radius_effective * 0.5),
+    ]
+
+    for offset_x, offset_y, size in square_definitions:
+        bush_color = BUSH_GREEN # All squares are now the same color
+        bush_squares_data.append({'offset_x': offset_x, 'offset_y': offset_y, 'size': size, 'color': bush_color})
+
+# Initialize bush squares once
+init_bush_squares()
 
 # Arrow to bush variables
 show_bush_arrow = False # New variable to control arrow visibility
@@ -291,76 +364,119 @@ def vypocitej_tmavost_hranice(x, y):
     else:
         return DARKER_GREEN
 
-# Vykreslení keře (from keř.py, adapted for camera)
-def draw_boxy_bush(pos, block_size, player_pos, player_hidden, camera_x, camera_y): # Added camera_x, camera_y
-    # tvar pluska z 9 čtverců
-    bush_blocks = [
-        (pos[0] - block_size/2, pos[1] - block_size/2, block_size, block_size),
-        (pos[0] - block_size/2, pos[1] - block_size*1.5, block_size, block_size),
-        (pos[0] - block_size/2, pos[1] + block_size/2, block_size, block_size),
-        (pos[0] - block_size*1.5, pos[1] - block_size/2, block_size, block_size),
-        (pos[0] + block_size/2, pos[1] - block_size/2, block_size, block_size),
-        (pos[0] + block_size/2, pos[1] + block_size/1.9, block_size, block_size), # pravý dolní block
-        (pos[0] + block_size/2, pos[1] - block_size*1.5, block_size, block_size), # pravý horní block
-        (pos[0] - block_size/0.67, pos[1] - block_size*1.5, block_size, block_size), # levý horní block
-        (pos[0] - block_size/0.67, pos[1] + block_size/2, block_size, block_size) # levý dolní block
-    ]
-    
-    player_near_bush = False
-    bush_center = [bush_pos[0], bush_pos[1]] # Use bush_pos directly
-    
-    # zkontrolovat jestli je hráč blízko keře
-    # Check distance in world coordinates
-    if distance(player_pos, bush_center) < bush_block_size * 2: #
-        player_near_bush = True
-    
-    # vykreslení blocků
-    for block in bush_blocks:
-        # jestli je hráč schovaný, keř je plně neprůhledný
-        if player_hidden:
-            alpha = 255
-        else:
-            alpha = 255  # normální alpha když není schovaný
-        
-        # Convert block world coordinates to screen coordinates
-        screen_x = int(block[0] - camera_x + SCREEN_WIDTH // 2)
-        screen_y = int(block[1] - camera_y + SCREEN_HEIGHT // 2)
+# Vykreslení keře (reskinned to a rounded, jagged shape using squares)
+def draw_boxy_bush(pos, collision_radius, player_pos, player_hidden, camera_x, camera_y):
+    # Determine the bounding box of the entire bush from its squares
+    min_x = float('inf')
+    max_x = float('-inf')
+    min_y = float('inf')
+    max_y = float('-inf')
 
-        # vytvoření povrchu pro bloky
-        block_surface = pygame.Surface((block[2], block[3]), pygame.SRCALPHA)
+    # Calculate overall bounding box for the temporary surface for outline
+    # The `pos` (bush_pos) is the center of the bush model
+    for segment in bush_squares_data:
+        # Calculate world coordinates of the square's top-left corner
+        world_square_x = pos[0] + segment['offset_x'] - segment['size'] / 2
+        world_square_y = pos[1] + segment['offset_y'] - segment['size'] / 2
         
-        # vykreslit blok
-        pygame.draw.rect(block_surface, (*BUSH_GREEN, alpha), (0, 0, block[2], block[3])) # Using BUSH_GREEN
-        pygame.draw.rect(block_surface, (*BUSH_GREEN, min(alpha + 30, 255)), (0, 0, block[2], block[3]), 2)  # trochu darker outlina
-        
-        # vykreslit blok na obrazovku
-        screen.blit(block_surface, (screen_x, screen_y))
+        min_x = min(min_x, world_square_x)
+        max_x = max(max_x, world_square_x + segment['size'])
+        min_y = min(min_y, world_square_y)
+        max_y = max(max_y, world_square_y + segment['size'])
     
-    return player_near_bush, bush_blocks
+    # Add a small buffer for the outline itself (increased for more structure)
+    buffer = 8 
+    surface_width = int(max_x - min_x) + 2 * buffer
+    surface_height = int(max_y - min_y) + 2 * buffer
+    
+    # If the calculated surface is too small or invalid, use a default size
+    if surface_width <= 0 or surface_height <= 0:
+        surface_width = int(collision_radius * 2.5) # Fallback approximate size
+        surface_height = int(collision_radius * 2.5)
+        # Recalculate min_x, min_y to center the default surface on pos
+        min_x = pos[0] - surface_width / 2
+        min_y = pos[1] - surface_height / 2
+
+
+    bush_surface_for_outline = pygame.Surface((surface_width, surface_height), pygame.SRCALPHA)
+    
+    # Draw all the bush squares onto the temporary surface for mask generation
+    # AND draw them directly to the screen for visual rendering
+    for segment in bush_squares_data:
+        world_x = pos[0] + segment['offset_x']
+        world_y = pos[1] + segment['offset_y']
+
+        screen_x = int(world_x - segment['size'] / 2 - camera_x + SCREEN_WIDTH // 2)
+        screen_y = int(world_y - segment['size'] / 2 - camera_y + SCREEN_HEIGHT // 2)
+        
+        bush_color = segment['color'] # Stable color
+        
+        # Draw filled square without individual border to main screen
+        bush_draw_surface = pygame.Surface((segment['size'], segment['size']), pygame.SRCALPHA)
+        pygame.draw.rect(bush_draw_surface, (*bush_color, 255), (0, 0, segment['size'], segment['size']), 0)
+        
+        screen.blit(bush_draw_surface, (screen_x, screen_y))
+
+        # Draw filled square to the temporary surface for outline generation
+        draw_x_outline = int(segment['offset_x'] + pos[0] - segment['size'] / 2 - min_x + buffer)
+        draw_y_outline = int(segment['offset_y'] + pos[1] - segment['size'] / 2 - min_y + buffer)
+        pygame.draw.rect(bush_surface_for_outline, (*bush_color, 255), (draw_x_outline, draw_y_outline, segment['size'], segment['size']), 0)
+
+
+    # Branches code removed here
+
+
+    # Now, draw the outline from the temporary surface (which only has green squares)
+    if bush_surface_for_outline.get_size() != (0, 0): # Ensure surface is valid
+        bush_mask = pygame.mask.from_surface(bush_surface_for_outline, 50) # Adjust alpha threshold as needed
+        outline_points = bush_mask.outline()
+
+        if outline_points:
+            # Translate outline points from temporary surface's local coordinates to screen coordinates
+            translated_outline = []
+            for p in outline_points:
+                # Convert from local surface coords (relative to its top-left)
+                # to world coords, then to screen coords
+                world_p_x = (min_x - buffer) + p[0] # Add min_x and subtract buffer to get back to original world coord relative to top-left of the bounding box
+                world_p_y = (min_y - buffer) + p[1]
+
+                screen_p_x = int(world_p_x - camera_x + SCREEN_WIDTH // 2)
+                screen_p_y = int(world_p_y - camera_y + SCREEN_HEIGHT // 2)
+                translated_outline.append((screen_p_x, screen_p_y))
+            
+            # Draw the outline. Use a thick line for visibility
+            pygame.draw.lines(screen, VERY_DARK_GREEN, True, translated_outline, 3) # Increased outline thickness
+
+
+    player_near_bush = distance([player_pos[0], player_pos[1]], pos) < collision_radius + player_radius # Player radius added for better "near" detection
+
+    return player_near_bush, pos, collision_radius # Return bush center and collision radius for collision detection
 
 # funkce pro počítání vzdálenost mezi body (from keř.py)
 def distance(point1, point2):
     return math.sqrt((point1[0] - point2[0])**2 + (point1[1] - point2[1])**2)
 
-# funkce na zjištění jestli je bod ve čtverci (from keř.py)
+# funkce na zjištění jestli je bod ve čtverci (from keř.py) - NO LONGER USED, KEPT FOR REFERENCE
 def point_in_rect(point, rect):
     return (rect[0] <= point[0] <= rect[0] + rect[2] and
             rect[1] <= point[1] <= rect[1] + rect[3])
 
-# funkce na detekování kolize s okraji a vytvořit particly (from keř.py)
-def check_bush_collision(old_pos, new_pos, bush_blocks):
-    was_inside = any(point_in_rect(old_pos, block) for block in bush_blocks)
-    is_inside = any(point_in_rect(new_pos, block) for block in bush_blocks)
+# funkce na detekování kolize s okraji a vytvořit particly
+def check_bush_collision(old_pos, new_pos, bush_center, bush_radius):
+    # Check if player was inside/outside and is now outside/inside the bush's collision circle
+    was_inside = distance(old_pos, bush_center) < bush_radius
+    is_inside = distance(new_pos, bush_center) < bush_radius
     
-    # jestli se hráč dotkl okraje vytvořit particly
+    # If the player crossed the boundary, generate particles
     if was_inside != is_inside:
-        # vytvořit particly na místě dotyku (přibližně)
+        # Approximate collision point
         collision_x = (old_pos[0] + new_pos[0]) / 2
         collision_y = (old_pos[1] + new_pos[1]) / 2
         
-        # vytvořit skupinku patrticlů
-        for _ in range(15): # <--- kolik particlů
-            color = random.choice([LIGHT_GREEN, YELLOW_GREEN, BUSH_GREEN]) # Using BUSH_GREEN
+        for _ in range(15): # Number of particles
+            # Particles should use the general bush color scheme, not necessarily just one of the random shades for squares
+            # Use BUSH_PARTICLE_SHADES for a more consistent particle color
+            color = random.choice(BUSH_PARTICLE_SHADES) 
             particles.append(Particle(collision_x, collision_y, color))
 
 # funkce pro vykreslení promptu (from keř.py, adapted for camera)
@@ -437,7 +553,8 @@ def draw_player(screen, offset_x, offset_y):
     player_alpha = 255
     # Calculate distance to bush using world coordinates
     dist_to_bush = distance([player_x, player_y], bush_pos)
-    if dist_to_bush < bush_block_size * 2: # If near bush, make slightly transparent
+    # The condition for player alpha should also be based on the bush_collision_radius
+    if dist_to_bush < bush_collision_radius: # If near bush, make slightly transparent
         player_alpha = 200
     
     if player_texture:
@@ -617,7 +734,7 @@ async def game_loop():
     global players, players_interpolated, players_prev, connected, status
     global x, y, player_x, player_y, my_id, response_time, last_update_time, is_moving
     global player_angle, current_weapon, weapon_cooldowns
-    global player_hidden, hide_pressed, player_prev_pos, particles, bush_pos, bush_block_size
+    global player_hidden, hide_pressed, player_prev_pos, particles, bush_pos, bush_collision_radius
     global show_bush_arrow # Declare global for the new variable
 
     # Připojení k serveru
@@ -641,10 +758,10 @@ async def game_loop():
                     for event in pygame.event.get():
                         if event.type == pygame.QUIT or (event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE):
                             running = False
+                        elif event.type == pygame.K_t:
+                            player_tile_x, player_tile_y = get_player_tile_position()
+                            add_image("images/tree1.png", player_tile_x + 2, player_tile_y + 2, 2.0)
                         elif event.type == pygame.KEYDOWN:
-                            if event.key == pygame.K_t:
-                                player_tile_x, player_tile_y = get_player_tile_position()
-                                add_image("images/tree1.png", player_tile_x + 2, player_tile_y + 2, 2.0)
                             if event.key == pygame.K_e: # Handling E key for hide/unhide
                                 if not hide_pressed:
                                     hide_pressed = True
@@ -734,7 +851,7 @@ async def game_loop():
                                             print(f"Moje ID: {my_id}")
                                             break
                                 
-                            # Aktualizace našeho hráče v datech (lokální přepsání)
+                            # Aktualizace našeho hráče v datech (lokální přepis)
                             if my_id:
                                 players[my_id] = {"x": player_x, "y": player_y, "hidden": player_hidden} # Ensure our local state is correct in 'players'
                                 
@@ -789,23 +906,25 @@ async def game_loop():
                     # Vykreslení
                     draw_map(screen, player_x, player_y)
                     
-                    player_near_bush, bush_blocks = draw_boxy_bush(bush_pos, bush_block_size, [player_x, player_y], player_hidden, player_x, player_y)
+                    # Get bush collision data from draw_boxy_bush
+                    player_near_bush, bush_col_center, bush_col_radius = draw_boxy_bush(bush_pos, bush_collision_radius, [player_x, player_y], player_hidden, player_x, player_y)
 
-                    # Check bush collision for particles
+                    # Check bush collision for particles using the new collision data
                     if ([player_x, player_y] != player_prev_pos) and not player_hidden: # Only if player moved and is not hidden
-                        check_bush_collision(player_prev_pos, [player_x, player_y], bush_blocks)
+                        check_bush_collision(player_prev_pos, [player_x, player_y], bush_col_center, bush_col_radius)
 
                     # Handle hide/unhide logic
                     if hide_pressed:
+                        # Use the same 'player_near_bush' from draw_boxy_bush which now uses the more accurate collision circle
                         if player_near_bush and not player_hidden:
                             player_hidden = True
                             for _ in range(20):
-                                color = random.choice([LIGHT_GREEN, YELLOW_GREEN, BUSH_GREEN])
+                                color = random.choice(BUSH_PARTICLE_SHADES) # Use BUSH_PARTICLE_SHADES for particles
                                 particles.append(Particle(player_x, player_y, color))
                         elif player_hidden:
                             player_hidden = False
                             for _ in range(20):
-                                color = random.choice([LIGHT_GREEN, YELLOW_GREEN, BUSH_GREEN])
+                                color = random.choice(BUSH_PARTICLE_SHADES) # Use BUSH_PARTICLE_SHADES for particles
                                 particles.append(Particle(player_x, player_y, color))
                         hide_pressed = False
                     
@@ -821,6 +940,7 @@ async def game_loop():
                     draw_other_players(screen, player_x, player_y)
                     
                     # Draw prompts for bush interaction
+                    # These also use 'player_near_bush' for consistency
                     if player_near_bush and not player_hidden:
                         draw_prompt("Press E to hide", [player_x, player_y - 50], player_x, player_y)
                     elif player_hidden:
