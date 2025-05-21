@@ -17,6 +17,7 @@ BLACK = (0, 0, 0)
 GREEN = (45, 160, 45)  # středně zelená
 LIGHT_GREEN = (75, 200, 75)
 YELLOW_GREEN = (150, 220, 50)
+BLUE = (100, 150, 255)
 
 
 # kulička hráče
@@ -25,10 +26,15 @@ player_radius = 20
 player_speed = 5
 player_alpha = 255
 player_prev_pos = player_pos.copy()
+player_hidden = False  # nový stav - jestli je hráč schovaný
+hide_pressed = False  # pro tracking E klávesy
 
 # keř
 bush_pos = [WIDTH // 2, HEIGHT // 2 - 100]  # pozice keře
 bush_block_size = player_radius * 1.5  # velikost jednotlivý blocků
+
+# font pro text
+font = pygame.font.Font(None, 36)
 
 # particle class
 class Particle:
@@ -72,7 +78,7 @@ def distance(point1, point2):
     return math.sqrt((point1[0] - point2[0])**2 + (point1[1] - point2[1])**2)
 
 # vykreslení keře
-def draw_boxy_bush(pos, block_size, player_pos):
+def draw_boxy_bush(pos, block_size, player_pos, player_hidden):
     # tvar pluska z 9 čtverců
     bush_blocks = [
         (pos[0] - block_size/2, pos[1] - block_size/2, block_size, block_size),
@@ -86,42 +92,32 @@ def draw_boxy_bush(pos, block_size, player_pos):
         (pos[0] - block_size/0.67, pos[1] + block_size/2, block_size, block_size) # levý dolní block
     ]
     
-    player_touching = False
-    player_inside = False
+    player_near_bush = False
+    bush_center = bush_pos
     
-        # vykreslení blocků
+    # zkontrolovat jestli je hráč blízko keře
+    if distance(player_pos, bush_center) < bush_block_size * 2:
+        player_near_bush = True
+    
+    # vykreslení blocků
     for block in bush_blocks:
-        # vypočítání prostředek blocků
-        block_center = (block[0] + block[2]/2, block[1] + block[3]/2)
-        
-        # vypočítání vzdálenosti od hráče do prostředku
-        dist = distance(player_pos, block_center)
-        
-        # alpha = 0 - transparency max
-        # alpha = 255 - transparency nulová
-        
-        # jestli je hráč v bloku nebo hodně blízko
-        if point_in_rect(player_pos, block):
-            alpha = 64  # hodně transparent když uvnitř
-            player_inside = True 
-        elif dist < player_radius + block_size/2:
-            # postupně snižovat alphu když je hráč blíže
-            alpha = max(64, int(255 * (dist - player_radius) / block_size/2))
-            player_touching = True 
+        # jestli je hráč schovaný, keř je plně neprůhledný
+        if player_hidden:
+            alpha = 255
         else:
-            alpha = 255  # plná alpha když je hráč pryč
+            alpha = 255  # normální alpha když není schovaný
         
         # vytvoření povrchu pro bloky
         block_surface = pygame.Surface((block[2], block[3]), pygame.SRCALPHA)
         
-        # vykreslit blok s transparency která je adektvátní
+        # vykreslit blok
         pygame.draw.rect(block_surface, (*GREEN, alpha), (0, 0, block[2], block[3]))
         pygame.draw.rect(block_surface, (*GREEN, min(alpha + 30, 255)), (0, 0, block[2], block[3]), 2)  # trochu darker outlina
         
         # vykreslit blok na obrazovku
         screen.blit(block_surface, (block[0], block[1]))
     
-    return player_inside, player_touching, bush_blocks
+    return player_near_bush, bush_blocks
 
 # funkce na zjištění jestli je bod ve čtverci
 def point_in_rect(point, rect):
@@ -143,8 +139,23 @@ def check_bush_collision(old_pos, new_pos, bush_blocks):
         for _ in range(15): # <--- kolik particlů
             color = random.choice([LIGHT_GREEN, YELLOW_GREEN, GREEN])
             particles.append(Particle(collision_x, collision_y, color))
-        
 
+# funkce pro vykreslení promptu
+def draw_prompt(text, pos):
+    # vytvoření pozadí pro text
+    text_surface = font.render(text, True, WHITE)
+    text_rect = text_surface.get_rect()
+    text_rect.center = pos
+    
+    # pozadí
+    background_rect = text_rect.inflate(20, 10)
+    background_surface = pygame.Surface((background_rect.width, background_rect.height), pygame.SRCALPHA)
+    pygame.draw.rect(background_surface, (*BLACK, 180), (0, 0, background_rect.width, background_rect.height))
+    pygame.draw.rect(background_surface, BLUE, (0, 0, background_rect.width, background_rect.height), 2)
+    
+    # vykreslení na obrazovku
+    screen.blit(background_surface, background_rect.topleft)
+    screen.blit(text_surface, text_rect)
 
 clock = pygame.time.Clock()
 running = True
@@ -153,32 +164,62 @@ while running:
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
+        
+        # handling E klávesy pro schovávání/vycházení
+        if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_e:
+                if not hide_pressed:  # prevence držení klávesy
+                    hide_pressed = True
             
+        if event.type == pygame.KEYUP:
+            if event.key == pygame.K_e:
+                hide_pressed = False
+                
     # uložit předchozí pozici pro detekování kolize přes okraje
     player_prev_pos = player_pos.copy()
     
     keys = pygame.key.get_pressed()
     
-    if keys[pygame.K_w] or keys[pygame.K_UP]:  
-        player_pos[1] -= player_speed
-    if keys[pygame.K_s] or keys[pygame.K_DOWN]:  
-        player_pos[1] += player_speed
-    if keys[pygame.K_a] or keys[pygame.K_LEFT]: 
-        player_pos[0] -= player_speed
-    if keys[pygame.K_d] or keys[pygame.K_RIGHT]: 
-        player_pos[0] += player_speed
-    
-    # aby hráč neopustil obrazovku
-    player_pos[0] = max(player_radius, min(WIDTH - player_radius, player_pos[0]))
-    player_pos[1] = max(player_radius, min(HEIGHT - player_radius, player_pos[1]))
+    # pohyb jen když není schovaný
+    if not player_hidden:
+        if keys[pygame.K_w] or keys[pygame.K_UP]:  
+            player_pos[1] -= player_speed
+        if keys[pygame.K_s] or keys[pygame.K_DOWN]:  
+            player_pos[1] += player_speed
+        if keys[pygame.K_a] or keys[pygame.K_LEFT]: 
+            player_pos[0] -= player_speed
+        if keys[pygame.K_d] or keys[pygame.K_RIGHT]: 
+            player_pos[0] += player_speed
+        
+        # aby hráč neopustil obrazovku
+        player_pos[0] = max(player_radius, min(WIDTH - player_radius, player_pos[0]))
+        player_pos[1] = max(player_radius, min(HEIGHT - player_radius, player_pos[1]))
     
     screen.fill(BLACK)
     
-    player_inside, player_touching, bush_blocks = draw_boxy_bush(bush_pos, bush_block_size, player_pos)
+    player_near_bush, bush_blocks = draw_boxy_bush(bush_pos, bush_block_size, player_pos, player_hidden)
     
-    # zkontrolovat kolizi s okraji a vytvořit particly když potřeba
-    if player_pos != player_prev_pos: # zkontrolovat jen když se hráč pohybuje
+    # zkontrolovat kolizi s okraji a vytvořit particly když potřeba (jen když není schovaný)
+    if player_pos != player_prev_pos and not player_hidden:
         check_bush_collision(player_prev_pos, player_pos, bush_blocks)
+    
+    # handling schovávání/vycházení
+    if hide_pressed:
+        if player_near_bush and not player_hidden:
+            # schovat hráče
+            player_hidden = True
+            # vytvořit particly při schovávání
+            for _ in range(20):
+                color = random.choice([LIGHT_GREEN, YELLOW_GREEN, GREEN])
+                particles.append(Particle(player_pos[0], player_pos[1], color))
+        elif player_hidden:
+            # vyjít z keře
+            player_hidden = False
+            # vytvořit particly při vycházení
+            for _ in range(20):
+                color = random.choice([LIGHT_GREEN, YELLOW_GREEN, GREEN])
+                particles.append(Particle(player_pos[0], player_pos[1], color))
+        hide_pressed = False  # reset po použití
     
     # update a vykreslení všech particlů
     for particle in particles[:]:
@@ -188,20 +229,23 @@ while running:
         else:
             particle.draw(screen)
     
-    if player_inside:
-        player_alpha = 64
-    elif player_touching:
-        player_alpha = 128
-    else:
-        player_alpha = min(255, player_alpha + 10)
+    # vykreslení hráče (jen když není schovaný)
+    if not player_hidden:
+        if player_near_bush:
+            player_alpha = 200  # trochu průhledný když je blízko
+        else:
+            player_alpha = 255
+        
+        # vykreslení hráče    
+        player_surface = pygame.Surface((player_radius*2, player_radius*2), pygame.SRCALPHA)
+        pygame.draw.circle(player_surface, (*RED, player_alpha), (player_radius, player_radius), player_radius)
+        screen.blit(player_surface, (player_pos[0] - player_radius, player_pos[1] - player_radius))
     
-    # vykreslení hráče    
-    player_surface = pygame.Surface((player_radius*2, player_radius*2), pygame.SRCALPHA)
-    pygame.draw.circle(player_surface, (*RED, player_alpha), (player_radius, player_radius), player_radius)
-    screen.blit(player_surface, (player_pos[0] - player_radius, player_pos[1] - player_radius))
-    
-    # vykreslení pluska
-    draw_boxy_bush(bush_pos, bush_block_size, player_pos)
+    # vykreslení promptu
+    if player_near_bush and not player_hidden:
+        draw_prompt("Press E to hide", (player_pos[0], player_pos[1] - 50))
+    elif player_hidden:
+        draw_prompt("Press E to exit", (bush_pos[0], bush_pos[1] - 80))
     
     pygame.display.flip()
     
