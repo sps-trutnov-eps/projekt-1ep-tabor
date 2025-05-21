@@ -250,6 +250,26 @@ def check_collision(x, y, radius):
     return False
 
 # Funkce pro pohyb hráče v herním světě
+def move_player(dx, dy):
+    global player_x, player_y, x, y
+    new_x = player_x + dx
+    new_y = player_y + dy
+    tile_x = int(new_x // TILE_SIZE)
+    tile_y = int(new_y // TILE_SIZE)
+    # Kontrola hranic mapy
+    if (tile_x < BOUNDARY_WIDTH or tile_x >= MAP_WIDTH - BOUNDARY_WIDTH or
+        tile_y < BOUNDARY_WIDTH or tile_y >= MAP_HEIGHT - BOUNDARY_WIDTH):
+        return False
+    # Kontrola kolize s objekty
+    if check_collision(new_x, new_y, player_radius):
+        return False
+    player_x = new_x
+    player_y = new_y
+    # Aktualizace pozice pro síťovou komunikaci (relativní k rozměrům okna)
+    x = (player_x / (MAP_WIDTH * TILE_SIZE)) * SCREEN_WIDTH
+    y = (player_y / (MAP_HEIGHT * TILE_SIZE)) * SCREEN_HEIGHT
+    return True
+
 def move_player_or_scooter(dx, dy, is_scooter=False):
     global player_x, player_y, x, y, scooter
     
@@ -491,6 +511,11 @@ async def game_loop():
     global players, players_interpolated, players_prev, connected, status
     global x, y, player_x, player_y, my_id, response_time, last_update_time, is_moving
     global player_angle, current_weapon, weapon_cooldowns
+    
+    scooter = Scooter(
+    MAP_WIDTH // 2 * TILE_SIZE + 100,  # Pozice vedle středu mapy
+    MAP_HEIGHT // 2 * TILE_SIZE + 100
+)
 
     # Připojení k serveru
     try:
@@ -533,24 +558,80 @@ async def game_loop():
                     keys = pygame.key.get_pressed()
                     dx, dy = 0, 0
                     
+                    current_e_pressed = keys[pygame.K_e]
+                    if current_e_pressed and not was_e_pressed:
+                        if scooter:
+                            # Výpočet vzdálenosti mezi hráčem a koloběžkou
+                            distance = math.sqrt((player_x - scooter.x)**2 + (player_y - scooter.y)**2)
+                            
+                            if not scooter.is_player_on and distance < 60:
+                                # Nasednout na koloběžku
+                                scooter.is_player_on = True
+                                scooter.x = player_x
+                                scooter.y = player_y
+                                scooter.direction = player_angle
+                                print("Nasedli jste na koloběžku!")
+                            elif scooter.is_player_on:
+                                # Sesednout z koloběžky
+                                scooter.is_player_on = False
+                                # Posun hráče mírně od koloběžky
+                                offset_x = math.cos(math.radians(player_angle)) * 40
+                                offset_y = math.sin(math.radians(player_angle)) * 40
+                                player_x += offset_x
+                                player_y += offset_y
+                                
+                                # Aktualizace pozice pro síť
+                                x = (player_x / (MAP_WIDTH * TILE_SIZE)) * SCREEN_WIDTH
+                                y = (player_y / (MAP_HEIGHT * TILE_SIZE)) * SCREEN_HEIGHT
+                                print("Sesedli jste z koloběžky!")
+                    was_e_pressed = current_e_pressed
+                    
 
-                    if keys[pygame.K_w] or keys[pygame.K_UP]: dy -= PLAYER_SPEED
-                    if keys[pygame.K_s] or keys[pygame.K_DOWN]: dy += PLAYER_SPEED
-                    if keys[pygame.K_a] or keys[pygame.K_LEFT]: dx -= PLAYER_SPEED
-                    if keys[pygame.K_d] or keys[pygame.K_RIGHT]: dx += PLAYER_SPEED
+                    if scooter and scooter.is_player_on:
+                        # Pohyb na koloběžce - jiné ovládání
+                        if keys[pygame.K_w] or keys[pygame.K_UP]:
+                            # Dopředu podle směru koloběžky
+                            dx = math.cos(math.radians(scooter.direction)) * scooter.speed
+                            dy = math.sin(math.radians(scooter.direction)) * scooter.speed
+                        if keys[pygame.K_s] or keys[pygame.K_DOWN]:
+                            # Dozadu podle směru koloběžky
+                            dx = -math.cos(math.radians(scooter.direction)) * (scooter.speed * 0.5)
+                            dy = -math.sin(math.radians(scooter.direction)) * (scooter.speed * 0.5)
+                        if keys[pygame.K_a] or keys[pygame.K_LEFT]:
+                            # Zatáčení vlevo
+                            scooter.direction = (scooter.direction - 4) % 360
+                        if keys[pygame.K_d] or keys[pygame.K_RIGHT]:
+                            # Zatáčení vpravo
+                            scooter.direction = (scooter.direction + 4) % 360
+                        
+                        # Aktualizace úhlu hráče podle koloběžky
+                        player_angle = scooter.direction
+                        
+                        # Provedení pohybu koloběžky
+                        if dx != 0 or dy != 0:
+                            moved = move_player_or_scooter(dx, dy, is_scooter=True)
+                            is_moving = moved
+                        else:
+                            is_moving = False
+                    else:
+                        # Normální pohyb hráče
+                        if keys[pygame.K_w] or keys[pygame.K_UP]: dy -= PLAYER_SPEED
+                        if keys[pygame.K_s] or keys[pygame.K_DOWN]: dy += PLAYER_SPEED
+                        if keys[pygame.K_a] or keys[pygame.K_LEFT]: dx -= PLAYER_SPEED
+                        if keys[pygame.K_d] or keys[pygame.K_RIGHT]: dx += PLAYER_SPEED
 
-                    # Diagonální pohyb normalizujeme
-                    if dx != 0 and dy != 0:
-                        dx *= 0.7071
-                        dy *= 0.7071
+                        # Diagonální pohyb normalizujeme
+                        if dx != 0 and dy != 0:
+                            dx *= 0.7071
+                            dy *= 0.7071
 
-                    # Aktualizace stavu pohybu
-                    moved = (dx != 0 or dy != 0)
-                    is_moving = moved
+                        # Aktualizace stavu pohybu
+                        moved = (dx != 0 or dy != 0)
+                        is_moving = moved
 
-                    # Provedení pohybu
-                    if moved:
-                        move_player(dx, dy)
+                        # Provedení pohybu
+                        if moved:
+                            move_player_or_scooter(dx, dy, is_scooter=False)
 
                     # Výpočet úhlu mezi hráčem a kurzorem myši
                     player_screen_x = int(SCREEN_WIDTH // 2)
@@ -637,9 +718,16 @@ async def game_loop():
                     draw_map(screen, player_x, player_y)
                     draw_player(screen, player_x, player_y)
                     draw_other_players(screen, player_x, player_y)
+                    if moved:
+                            move_player_or_scooter(dx, dy, is_scooter=False)
+                    if scooter:
+                        scooter_x = player_x
+                        scooter_y = player_y
+                        scooter.draw(screen, scooter_x, scooter_y)
                     
                     # Vykreslení UI
                     draw_ui(screen, font)
+                    
                     
                     # FPS počítadlo
                     fps = clock.get_fps()
