@@ -121,9 +121,9 @@ if not os.path.exists("images"):
 # Načtení textury hráče z gun folderu
 player_texture = None
 try:
-    player_texture = pygame.image.load(os.path.join("gun", "player.png")).convert_alpha()
+    player_texture = pygame.image.load(os.path.join("images", "player.png")).convert_alpha()
     player_texture = pygame.transform.scale(player_texture, (player_size, player_size))
-    print(f"Textura hráče úspěšně načtena z gun/player.png (velikost: {player_size}x{player_size})")
+    print(f"Textura hráče úspěšně načtena z images/player.png (velikost: {player_size}x{player_size})")
 except Exception as e:
     print(f"Chyba při načítání textury hráče: {e}")
     # Vytvoření výchozí textury hráče, pokud se nepodaří načíst obrázek
@@ -136,7 +136,7 @@ except Exception as e:
 weapon_textures = {}
 for name, weapon_info in WEAPONS.items():
     try:
-        weapon_path = os.path.join("gun", weapon_info["image"])
+        weapon_path = os.path.join("images", weapon_info["image"])
         original_texture = pygame.image.load(weapon_path).convert_alpha()
         
         # Calculate scaled dimensions
