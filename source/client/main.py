@@ -161,15 +161,15 @@ class Scooter:
         self.x = x  # pozice ve světě (v pixelech, ne dlaždicích)
         self.y = y
         self.direction = 0  # směr v stupních
-        self.radius = 20
+        self.radius = 80
         self.speed = 8  # rychlejší než běžný pohyb hráče
         self.is_player_on = False
         
         # Načtení textury koloběžky (volitelné)
         self.texture = None
         try:
-            scooter_img = pygame.image.load(os.path.join("images", "scooter.png")).convert_alpha()
-            self.texture = pygame.transform.scale(scooter_img, (40, 40))
+            scooter_img = pygame.image.load(os.path.join("images", "scooter.PNG")).convert_alpha()
+            self.texture = pygame.transform.scale(scooter_img, (200, 100))
             print("Textura koloběžky načtena")
         except:
             print("Textura koloběžky nenalezena, použiji základní vykreslení")
@@ -193,20 +193,20 @@ class Scooter:
             back_y = screen_y - math.sin(math.radians(self.direction)) * (self.radius * 0.7)
             
             # Kolečka
-            pygame.draw.circle(screen, BLACK, (int(front_x), int(front_y)), 5)
-            pygame.draw.circle(screen, BLACK, (int(back_x), int(back_y)), 5)
+            pygame.draw.circle(screen, BLACK, (int(front_x), int(front_y)), 10)
+            pygame.draw.circle(screen, BLACK, (int(back_x), int(back_y)), 10)
             
             # Deska koloběžky
-            pygame.draw.line(screen, BLUE, (front_x, front_y), (back_x, back_y), 6)
+            pygame.draw.line(screen, BLUE, (front_x, front_y), (back_x, back_y), 10)
             
             # Řídítka
-            handlebar_x = front_x + math.cos(math.radians(self.direction + 90)) * 12
-            handlebar_y = front_y + math.sin(math.radians(self.direction + 90)) * 12
-            handlebar_x2 = front_x + math.cos(math.radians(self.direction - 90)) * 12
-            handlebar_y2 = front_y + math.sin(math.radians(self.direction - 90)) * 12
+            handlebar_x = front_x + math.cos(math.radians(self.direction + 90)) * 40
+            handlebar_y = front_y + math.sin(math.radians(self.direction + 90)) * 40
+            handlebar_x2 = front_x + math.cos(math.radians(self.direction - 90)) * 40
+            handlebar_y2 = front_y + math.sin(math.radians(self.direction - 90)) * 40
             
-            pygame.draw.line(screen, BLACK, (front_x, front_y), (handlebar_x, handlebar_y), 3)
-            pygame.draw.line(screen, BLACK, (front_x, front_y), (handlebar_x2, handlebar_y2), 3)
+            pygame.draw.line(screen, BLACK, (front_x, front_y), (handlebar_x, handlebar_y), 10)
+            pygame.draw.line(screen, BLACK, (front_x, front_y), (handlebar_x2, handlebar_y2), 10)
 
     def check_collision_with_images(self):
         """Kontrola kolize koloběžky s objekty na mapě"""
@@ -721,9 +721,7 @@ async def game_loop():
                     if moved:
                             move_player_or_scooter(dx, dy, is_scooter=False)
                     if scooter:
-                        scooter_x = player_x
-                        scooter_y = player_y
-                        scooter.draw(screen, scooter_x, scooter_y)
+                        scooter.draw(screen, player_x, player_y)
                     
                     # Vykreslení UI
                     draw_ui(screen, font)
