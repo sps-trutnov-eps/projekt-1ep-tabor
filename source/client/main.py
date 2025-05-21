@@ -153,6 +153,11 @@ for name, weapon_info in WEAPONS.items():
         placeholder = pygame.Surface((40, 15), pygame.SRCALPHA)
         pygame.draw.rect(placeholder, (200, 200, 200), (0, 0, 40, 15))
         weapon_textures[name] = placeholder
+        
+# Projektily    
+projectiles = []
+PROJECTILE_SPEED = 10
+PROJECTILE_LIFETIME = 60  # ve snímcích
 
 # Funkce pro přidání PNG obrázku na mapu
 def add_image(image_path, x, y, scale=1.0):
@@ -398,6 +403,22 @@ def shoot(weapon_name):
     # Nastavení cooldownu zbraně
     weapon_cooldowns[weapon_name] = WEAPONS[weapon_name]["cooldown"]
     
+    # Vytvoření projektilu
+    angle_rad = math.radians(player_angle - 90)
+    dx = math.cos(angle_rad)
+    dy = math.sin(angle_rad)
+
+    projectile = {
+        "x": player_x,
+        "y": player_y,
+        "dx": dx * PROJECTILE_SPEED,
+        "dy": dy * PROJECTILE_SPEED,
+        "lifetime": PROJECTILE_LIFETIME,
+        "color": YELLOW,
+        "radius": 5
+    }
+    projectiles.append(projectile)
+    
     # Zde by mohla být implementace střelby s efekty, projektily, atd.
     print(f"Střelba ze zbraně: {weapon_name}, poškození: {WEAPONS[weapon_name]['damage']}")
     
@@ -558,6 +579,22 @@ async def game_loop():
                     draw_map(screen, player_x, player_y)
                     draw_player(screen, player_x, player_y)
                     draw_other_players(screen, player_x, player_y)
+                    
+                    # Aktualizace projektilů
+                    for p in list(projectiles):
+                        p["x"] += p["dx"]
+                        p["y"] += p["dy"]
+                        p["lifetime"] -= 1
+                        if p["lifetime"] <= 0:
+                            projectiles.remove(p)
+                            
+                    # Vykreslení projektilů
+                    for p in projectiles:
+                        screen_x = int(p["x"] - player_x + SCREEN_WIDTH // 2)
+                        screen_y = int(p["y"] - player_y + SCREEN_HEIGHT // 2)
+                        pygame.draw.circle(screen, p["color"], (screen_x, screen_y), p["radius"])
+                        print(f"Projektil na mapě: {p['x']:.1f}, {p['y']:.1f}")
+                        print(f"Player:            {player_x:.1f}, {player_y:.1f}")
                     
                     # Vykreslení UI
                     draw_ui(screen, font)
