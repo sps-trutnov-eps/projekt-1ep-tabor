@@ -97,6 +97,8 @@ current_weapon_index = 0
 weapon_names = list(WEAPONS.keys())
 current_weapon = weapon_names[current_weapon_index]
 weapon_cooldowns = {name: 0 for name in WEAPONS}
+scooter = None
+was_e_pressed = False
 
 # Inicializace hráče
 x = random.randint(50, SCREEN_WIDTH-50)  # Inicializace pro klienta
@@ -153,6 +155,68 @@ for name, weapon_info in WEAPONS.items():
         placeholder = pygame.Surface((40, 15), pygame.SRCALPHA)
         pygame.draw.rect(placeholder, (200, 200, 200), (0, 0, 40, 15))
         weapon_textures[name] = placeholder
+        
+class Scooter:
+    def __init__(self, x, y):
+        self.x = x  # pozice ve světě (v pixelech, ne dlaždicích)
+        self.y = y
+        self.direction = 0  # směr v stupních
+        self.radius = 20
+        self.speed = 8  # rychlejší než běžný pohyb hráče
+        self.is_player_on = False
+        
+        # Načtení textury koloběžky (volitelné)
+        self.texture = None
+        try:
+            scooter_img = pygame.image.load(os.path.join("images", "scooter.png")).convert_alpha()
+            self.texture = pygame.transform.scale(scooter_img, (40, 40))
+            print("Textura koloběžky načtena")
+        except:
+            print("Textura koloběžky nenalezena, použiji základní vykreslení")
+    
+    def draw(self, screen, camera_x, camera_y):
+        # Převod pozice koloběžky na obrazovku
+        screen_x = int(self.x - camera_x + SCREEN_WIDTH // 2)
+        screen_y = int(self.y - camera_y + SCREEN_HEIGHT // 2)
+        
+        if self.texture:
+            # Rotace textury podle směru
+            rotated_texture = pygame.transform.rotate(self.texture, -self.direction)
+            rot_rect = rotated_texture.get_rect(center=(screen_x, screen_y))
+            screen.blit(rotated_texture, rot_rect.topleft)
+        else:
+            # Základní vykreslení koloběžky
+            # Přední a zadní kolečko
+            front_x = screen_x + math.cos(math.radians(self.direction)) * (self.radius * 0.7)
+            front_y = screen_y + math.sin(math.radians(self.direction)) * (self.radius * 0.7)
+            back_x = screen_x - math.cos(math.radians(self.direction)) * (self.radius * 0.7)
+            back_y = screen_y - math.sin(math.radians(self.direction)) * (self.radius * 0.7)
+            
+            # Kolečka
+            pygame.draw.circle(screen, BLACK, (int(front_x), int(front_y)), 5)
+            pygame.draw.circle(screen, BLACK, (int(back_x), int(back_y)), 5)
+            
+            # Deska koloběžky
+            pygame.draw.line(screen, BLUE, (front_x, front_y), (back_x, back_y), 6)
+            
+            # Řídítka
+            handlebar_x = front_x + math.cos(math.radians(self.direction + 90)) * 12
+            handlebar_y = front_y + math.sin(math.radians(self.direction + 90)) * 12
+            handlebar_x2 = front_x + math.cos(math.radians(self.direction - 90)) * 12
+            handlebar_y2 = front_y + math.sin(math.radians(self.direction - 90)) * 12
+            
+            pygame.draw.line(screen, BLACK, (front_x, front_y), (handlebar_x, handlebar_y), 3)
+            pygame.draw.line(screen, BLACK, (front_x, front_y), (handlebar_x2, handlebar_y2), 3)
+
+    def check_collision_with_images(self):
+        """Kontrola kolize koloběžky s objekty na mapě"""
+        scooter_hitbox = pygame.Rect(self.x - self.radius, self.y - self.radius, 
+                                   self.radius * 2, self.radius * 2)
+        
+        for img in images:
+            if img['hitbox'].colliderect(scooter_hitbox):
+                return True
+        return False
 
 # Funkce pro přidání PNG obrázku na mapu
 def add_image(image_path, x, y, scale=1.0):
@@ -186,32 +250,43 @@ def check_collision(x, y, radius):
     return False
 
 # Funkce pro pohyb hráče v herním světě
-def move_player(dx, dy):
-    global player_x, player_y, x, y
-   
-    new_x = player_x + dx
-    new_y = player_y + dy
-   
-    tile_x = int(new_x // TILE_SIZE)
-    tile_y = int(new_y // TILE_SIZE)
-   
-    # Kontrola hranic mapy
-    if (tile_x < BOUNDARY_WIDTH or tile_x >= MAP_WIDTH - BOUNDARY_WIDTH or
-        tile_y < BOUNDARY_WIDTH or tile_y >= MAP_HEIGHT - BOUNDARY_WIDTH):
-        return False
-   
-    # Kontrola kolize s objekty
-    if check_collision(new_x, new_y, player_radius):
-        return False
-   
-    player_x = new_x
-    player_y = new_y
+def move_player_or_scooter(dx, dy, is_scooter=False):
+    global player_x, player_y, x, y, scooter
     
-    # Aktualizace pozice pro síťovou komunikaci (relativní k rozměrům okna)
-    x = (player_x / (MAP_WIDTH * TILE_SIZE)) * SCREEN_WIDTH
-    y = (player_y / (MAP_HEIGHT * TILE_SIZE)) * SCREEN_HEIGHT
-    
-    return True
+    if is_scooter and scooter:
+        # Pohyb koloběžky
+        new_x = scooter.x + dx
+        new_y = scooter.y + dy
+        
+        # Kontrola hranic mapy
+        tile_x = int(new_x // TILE_SIZE)
+        tile_y = int(new_y // TILE_SIZE)
+        
+        if (tile_x < BOUNDARY_WIDTH or tile_x >= MAP_WIDTH - BOUNDARY_WIDTH or
+            tile_y < BOUNDARY_WIDTH or tile_y >= MAP_HEIGHT - BOUNDARY_WIDTH):
+            return False
+        
+        # Dočasně nastavíme pozici pro kontrolu kolize
+        old_x, old_y = scooter.x, scooter.y
+        scooter.x, scooter.y = new_x, new_y
+        
+        if scooter.check_collision_with_images():
+            scooter.x, scooter.y = old_x, old_y  # Vrátíme zpět
+            return False
+        
+        # Aktualizace pozice hráče, pokud je na koloběžce
+        if scooter.is_player_on:
+            player_x = scooter.x
+            player_y = scooter.y
+            
+            # Aktualizace pozice pro síťovou komunikaci
+            x = (player_x / (MAP_WIDTH * TILE_SIZE)) * SCREEN_WIDTH
+            y = (player_y / (MAP_HEIGHT * TILE_SIZE)) * SCREEN_HEIGHT
+        
+        return True
+    else:
+        # Původní pohyb hráče
+        return move_player(dx, dy)
 
 # Funkce pro výpočet tmavosti hranice
 def vypocitej_tmavost_hranice(x, y):
@@ -441,6 +516,9 @@ async def game_loop():
                         elif event.type == pygame.KEYDOWN and event.key == pygame.K_t:
                             player_tile_x, player_tile_y = get_player_tile_position()
                             add_image("images/tree1.png", player_tile_x + 2, player_tile_y + 2, 2.0)
+                        elif event.type == pygame.KEYUP:
+                            if event.key == pygame.K_e:
+                                was_e_pressed = False
                         elif event.type == pygame.MOUSEBUTTONDOWN:
                             # Levé tlačítko myši pro střelbu
                             if event.button == 1:
@@ -454,6 +532,7 @@ async def game_loop():
                     # Zpracování vstupů
                     keys = pygame.key.get_pressed()
                     dx, dy = 0, 0
+                    
 
                     if keys[pygame.K_w] or keys[pygame.K_UP]: dy -= PLAYER_SPEED
                     if keys[pygame.K_s] or keys[pygame.K_DOWN]: dy += PLAYER_SPEED
