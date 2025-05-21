@@ -32,6 +32,22 @@ BLUE = (0, 0, 255)
 WHITE = (255, 255, 255)
 YELLOW = (255, 255, 0)
 
+class PowerUp:
+    def __init__(self, x, y, image_path, effect_type, duration=5):
+        self.x = x
+        self.y = y
+        self.image = pygame.image.load(image_path).convert_alpha()
+        self.image = pygame.transform.scale(self.image, (TITLE_SIZE, TITLE_SIZE))
+        self.rect = self.image.get_rect(center=(x, y))
+        self.effect_type = effect_type
+        self.duration = durationself.active = True
+    
+    def draw(self, screen, camera_x, camera_y):
+        screen_x = int(self.x - camera_x + SCREEN_WIDTH // 2)
+        screen_y = int(self.y - camera_y + SCREEN_WIDTH // 2)
+        screen.blit(self.image, (screen_x - TITLE_SIZE // 2, screen_y - TITLE_SIZE // 2))
+        
+
 # Konstanty pro herní mapu
 TILE_SIZE = 40
 BOUNDARY_WIDTH = 5
