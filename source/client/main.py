@@ -721,11 +721,12 @@ async def game_loop():
 
                     # Vykreslení
                     draw_map(screen, player_x, player_y)
-                    draw_player(screen, player_x, player_y)
-                    draw_other_players(screen, player_x, player_y)
                     
                     if scooter:
                         scooter.draw(screen, player_x, player_y)
+                        
+                    draw_player(screen, player_x, player_y)
+                    draw_other_players(screen, player_x, player_y)
                     
                     # Vykreslení UI
                     draw_ui(screen, font)
