@@ -175,9 +175,14 @@ class Scooter:
             print("Textura koloběžky nenalezena, použiji základní vykreslení")
     
     def draw(self, screen, camera_x, camera_y):
-        # Převod pozice koloběžky na obrazovku
-        screen_x = int(self.x - camera_x + SCREEN_WIDTH // 2)
-        screen_y = int(self.y - camera_y + SCREEN_HEIGHT // 2)
+        # Pokud je hráč na koloběžce, koloběžka se vykresluje na pozici hráče (střed obrazovky)
+        if self.is_player_on:
+            screen_x = SCREEN_WIDTH // 2
+            screen_y = SCREEN_HEIGHT // 2
+        else:
+            # Pokud hráč není na koloběžce, vykreslí se na pozici ve světě
+            screen_x = int(self.x - camera_x + SCREEN_WIDTH // 2)
+            screen_y = int(self.y - camera_y + SCREEN_HEIGHT // 2)
         
         if self.texture:
             # Rotace textury podle směru
@@ -718,8 +723,7 @@ async def game_loop():
                     draw_map(screen, player_x, player_y)
                     draw_player(screen, player_x, player_y)
                     draw_other_players(screen, player_x, player_y)
-                    if moved:
-                            move_player_or_scooter(dx, dy, is_scooter=False)
+                    
                     if scooter:
                         scooter.draw(screen, player_x, player_y)
                     
