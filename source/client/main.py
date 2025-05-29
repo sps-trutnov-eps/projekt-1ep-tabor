@@ -164,15 +164,21 @@ for name, weapon_info in WEAPONS.items():
         pygame.draw.rect(placeholder, (200, 200, 200), (0, 0, 40, 15))
         weapon_textures[name] = placeholder
 
-# Keř variables
-# Generate random coordinates for the bush, avoiding map boundaries
-random_bush_x = random.randint(BOUNDARY_WIDTH * TILE_SIZE, (MAP_WIDTH - BOUNDARY_WIDTH) * TILE_SIZE)
-random_bush_y = random.randint(BOUNDARY_WIDTH * TILE_SIZE, (MAP_HEIGHT - BOUNDARY_WIDTH) * TILE_SIZE)
-bush_pos = [random_bush_x, random_bush_y]
-bush_collision_radius = player_radius * 1.25
-player_hidden = False
+# Keř variables (now a list of bushes)
+bush_positions = []
+bush_collision_radii = [] # Each bush can have its own radius, though here it's uniform
+NUM_BUSHES = 4 # Define the number of bushes
+
+for _ in range(NUM_BUSHES):
+    random_bush_x = random.randint(BOUNDARY_WIDTH * TILE_SIZE, (MAP_WIDTH - BOUNDARY_WIDTH) * TILE_SIZE)
+    random_bush_y = random.randint(BOUNDARY_WIDTH * TILE_SIZE, (MAP_HEIGHT - BOUNDARY_WIDTH) * TILE_SIZE)
+    bush_positions.append([random_bush_x, random_bush_y])
+    bush_collision_radii.append(player_radius * 1.25) # Uniform radius for all bushes
+
+player_hidden = False # True if player is hidden in ANY bush
 hide_pressed = False
 player_prev_pos = [player_x, player_y]
+current_hiding_bush_index = -1 # Stores the index of the bush the player is currently hiding in
 
 # Global variable to store bush square segment data with stable colors
 bush_squares_data = []
@@ -181,7 +187,7 @@ bush_squares_data = []
 def init_bush_squares():
     global bush_squares_data
     bush_squares_data = [] # Reset it to ensure stability on re-init if ever called again
-    bush_collision_radius_effective = bush_collision_radius # Use the updated bush_collision_radius
+    bush_collision_radius_effective = player_radius * 1.25 # Use a fixed effective radius for bush shape generation
 
     # Define base square offsets and sizes (relative to center of the bush)
     # These definitions are adjusted to create a more organic, bushy shape.
@@ -308,7 +314,6 @@ def add_image(image_path, x, y, scale=1.0):
 # Funkce pro kontrolu kolize s obrazovými objekty
 def check_collision(x, y, radius):
     player_hitbox = pygame.Rect(x - radius, y - radius, radius * 2, radius * 2) # Adjusted hitbox size for circles
-   
     for img in images:
         # Optimization: only check collision for nearby images
         if abs((img['x'] * TILE_SIZE + img['width'] / 2) - x) < TILE_SIZE * 3 and \
@@ -320,34 +325,31 @@ def check_collision(x, y, radius):
 # Funkce pro pohyb hráče v herním světě
 def move_player(dx, dy):
     global player_x, player_y, x, y, player_prev_pos, player_hidden
-   
     if player_hidden: # Cannot move if hidden
         return False
 
     new_x = player_x + dx
     new_y = player_y + dy
-   
+
     tile_x = int(new_x // TILE_SIZE)
     tile_y = int(new_y // TILE_SIZE)
-   
+
     # Kontrola hranic mapy
     if (tile_x < BOUNDARY_WIDTH or tile_x >= MAP_WIDTH - BOUNDARY_WIDTH or
         tile_y < BOUNDARY_WIDTH or tile_y >= MAP_HEIGHT - BOUNDARY_WIDTH):
         return False
-   
+
     # Kontrola kolize s objekty
     if check_collision(new_x, new_y, player_radius):
         return False
-   
+    
     player_prev_pos = [player_x, player_y] # Save previous position before updating
     player_x = new_x
     player_y = new_y
-    
     # Aktualizace pozice pro síťovou komunikaci (relativní k rozměrům okna)
     # These are not truly relative to window anymore, but map coords for network
     x = player_x
     y = player_y
-    
     return True
 
 # Funkce pro výpočet tmavosti hranice
@@ -355,9 +357,8 @@ def vypocitej_tmavost_hranice(x, y):
     vzdalenost_od_okraje_x = min(x, MAP_WIDTH - 1 - x)
     vzdalenost_od_okraje_y = min(y, MAP_HEIGHT - 1 - y)
     vzdalenost_od_okraje = min(vzdalenost_od_okraje_x, vzdalenost_od_okraje_y)
-   
     hranice_prechodu = BOUNDARY_WIDTH + 5
-   
+
     if vzdalenost_od_okraje >= hranice_prechodu:
         return DARK_GREEN
     elif BOUNDARY_WIDTH <= vzdalenost_od_okraje < hranice_prechodu:
@@ -376,612 +377,536 @@ def draw_boxy_bush(pos, collision_radius, player_pos, player_hidden, camera_x, c
     max_y = float('-inf')
 
     # Calculate overall bounding box for the temporary surface for outline
-    # The `pos` (bush_pos) is the center of the bush model
-    for segment in bush_squares_data:
-        # Calculate world coordinates of the square's top-left corner
-        world_square_x = pos[0] + segment['offset_x'] - segment['size'] / 2
-        world_square_y = pos[1] + segment['offset_y'] - segment['size'] / 2
-        
-        min_x = min(min_x, world_square_x)
-        max_x = max(max_x, world_square_x + segment['size'])
-        min_y = min(min_y, world_square_y)
-        max_y = max(max_y, world_square_y + segment['size'])
+    # The `pos` (bush_pos) is the center of the bush.
+    # The `offset_x` and `offset_y` for each square are relative to `pos`.
+    for sq_data in bush_squares_data:
+        abs_x = pos[0] + sq_data['offset_x']
+        abs_y = pos[1] + sq_data['offset_y']
+        size = sq_data['size']
+        min_x = min(min_x, abs_x - size / 2)
+        max_x = max(max_x, abs_x + size / 2)
+        min_y = min(min_y, abs_y - size / 2)
+        max_y = max(max_y, abs_y + size / 2)
+
+    # Add a small buffer for the outline
+    outline_buffer = 5
+    min_x -= outline_buffer
+    max_x += outline_buffer
+    min_y -= outline_buffer
+    max_y += outline_buffer
+
+    # Convert world coordinates to screen coordinates for the temporary surface
+    screen_min_x = int(min_x - camera_x + SCREEN_WIDTH // 2)
+    screen_min_y = int(min_y - camera_y + SCREEN_HEIGHT // 2)
+
+    # Calculate dimensions of the temporary surface
+    temp_surface_width = int(max_x - min_x)
+    temp_surface_height = int(max_y - min_y)
+
+    # Create a temporary surface with alpha for drawing the bush and its outline
+    temp_surface = pygame.Surface((temp_surface_width, temp_surface_height), pygame.SRCALPHA)
     
-    # Add a small buffer for the outline itself (increased for more structure)
-    buffer = 8 
-    surface_width = int(max_x - min_x) + 2 * buffer
-    surface_height = int(max_y - min_y) + 2 * buffer
-    
-    # If the calculated surface is too small or invalid, use a default size
-    if surface_width <= 0 or surface_height <= 0:
-        surface_width = int(collision_radius * 2.5) # Fallback approximate size
-        surface_height = int(collision_radius * 2.5)
-        # Recalculate min_x, min_y to center the default surface on pos
-        min_x = pos[0] - surface_width / 2
-        min_y = pos[1] - surface_height / 2
+    # Draw the outline first
+    # Draw slightly larger squares in VERY_DARK_GREEN for the outline effect
+    for sq_data in bush_squares_data:
+        # Adjust position relative to the temporary surface's top-left corner
+        draw_x = int((pos[0] + sq_data['offset_x'] - sq_data['size'] / 2) - min_x)
+        draw_y = int((pos[1] + sq_data['offset_y'] - sq_data['size'] / 2) - min_y)
+        draw_size = int(sq_data['size'] + 2 * outline_buffer) # Make outline slightly larger
+        pygame.draw.rect(temp_surface, VERY_DARK_GREEN, (draw_x, draw_y, draw_size, draw_size), border_radius=int(draw_size * 0.3))
 
+    # Then draw the main bush squares
+    for sq_data in bush_squares_data:
+        # Adjust position relative to the temporary surface's top-left corner
+        draw_x = int((pos[0] + sq_data['offset_x'] - sq_data['size'] / 2) - min_x)
+        draw_y = int((pos[1] + sq_data['offset_y'] - sq_data['size'] / 2) - min_y)
+        draw_size = int(sq_data['size'])
+        pygame.draw.rect(temp_surface, sq_data['color'], (draw_x, draw_y, draw_size, draw_size), border_radius=int(draw_size * 0.3))
 
-    bush_surface_for_outline = pygame.Surface((surface_width, surface_height), pygame.SRCALPHA)
-    
-    # Draw all the bush squares onto the temporary surface for mask generation
-    # AND draw them directly to the screen for visual rendering
-    for segment in bush_squares_data:
-        world_x = pos[0] + segment['offset_x']
-        world_y = pos[1] + segment['offset_y']
+    # Blit the temporary surface onto the main screen
+    screen.blit(temp_surface, (screen_min_x, screen_min_y))
 
-        screen_x = int(world_x - segment['size'] / 2 - camera_x + SCREEN_WIDTH // 2)
-        screen_y = int(world_y - segment['size'] / 2 - camera_y + SCREEN_HEIGHT // 2)
-        
-        bush_color = segment['color'] # Stable color
-        
-        # Draw filled square without individual border to main screen
-        bush_draw_surface = pygame.Surface((segment['size'], segment['size']), pygame.SRCALPHA)
-        pygame.draw.rect(bush_draw_surface, (*bush_color, 255), (0, 0, segment['size'], segment['size']), 0)
-        
-        screen.blit(bush_draw_surface, (screen_x, screen_y))
-
-        # Draw filled square to the temporary surface for outline generation
-        draw_x_outline = int(segment['offset_x'] + pos[0] - segment['size'] / 2 - min_x + buffer)
-        draw_y_outline = int(segment['offset_y'] + pos[1] - segment['size'] / 2 - min_y + buffer)
-        pygame.draw.rect(bush_surface_for_outline, (*bush_color, 255), (draw_x_outline, draw_y_outline, segment['size'], segment['size']), 0)
-
-
-    # Branches code removed here
-
-
-    # Now, draw the outline from the temporary surface (which only has green squares)
-    if bush_surface_for_outline.get_size() != (0, 0): # Ensure surface is valid
-        bush_mask = pygame.mask.from_surface(bush_surface_for_outline, 50) # Adjust alpha threshold as needed
-        outline_points = bush_mask.outline()
-
-        if outline_points:
-            # Translate outline points from temporary surface's local coordinates to screen coordinates
-            translated_outline = []
-            for p in outline_points:
-                # Convert from local surface coords (relative to its top-left)
-                # to world coords, then to screen coords
-                world_p_x = (min_x - buffer) + p[0] # Add min_x and subtract buffer to get back to original world coord relative to top-left of the bounding box
-                world_p_y = (min_y - buffer) + p[1]
-
-                screen_p_x = int(world_p_x - camera_x + SCREEN_WIDTH // 2)
-                screen_p_y = int(world_p_y - camera_y + SCREEN_HEIGHT // 2)
-                translated_outline.append((screen_p_x, screen_p_y))
-            
-            # Draw the outline. Use a thick line for visibility
-            pygame.draw.lines(screen, VERY_DARK_GREEN, True, translated_outline, 3) # Increased outline thickness
-
-
-    player_near_bush = distance([player_pos[0], player_pos[1]], pos) < collision_radius + player_radius # Player radius added for better "near" detection
-
-    return player_near_bush, pos, collision_radius # Return bush center and collision radius for collision detection
-
-# funkce pro počítání vzdálenost mezi body (from keř.py)
-def distance(point1, point2):
-    return math.sqrt((point1[0] - point2[0])**2 + (point1[1] - point2[1])**2)
-
-# funkce na zjištění jestli je bod ve čtverci (from keř.py) - NO LONGER USED, KEPT FOR REFERENCE
-def point_in_rect(point, rect):
-    return (rect[0] <= point[0] <= rect[0] + rect[2] and
-            rect[1] <= point[1] <= rect[1] + rect[3])
-
-# funkce na detekování kolize s okraji a vytvořit particly
-def check_bush_collision(old_pos, new_pos, bush_center, bush_radius):
-    # Check if player was inside/outside and is now outside/inside the bush's collision circle
-    was_inside = distance(old_pos, bush_center) < bush_radius
-    is_inside = distance(new_pos, bush_center) < bush_radius
-    
-    # If the player crossed the boundary, generate particles
-    if was_inside != is_inside:
-        # Approximate collision point
-        collision_x = (old_pos[0] + new_pos[0]) / 2
-        collision_y = (old_pos[1] + new_pos[1]) / 2
-        
-        for _ in range(15): # Number of particles
-            # Particles should use the general bush color scheme, not necessarily just one of the random shades for squares
-            # Use BUSH_PARTICLE_SHADES for a more consistent particle color
-            color = random.choice(BUSH_PARTICLE_SHADES) 
-            particles.append(Particle(collision_x, collision_y, color))
-
-# funkce pro vykreslení promptu (from keř.py, adapted for camera)
-def draw_prompt(text, world_pos, camera_x, camera_y): # Added world_pos, camera_x, camera_y
-    # Convert world position to screen position
-    screen_x = int(world_pos[0] - camera_x + SCREEN_WIDTH // 2)
-    screen_y = int(world_pos[1] - camera_y + SCREEN_HEIGHT // 2)
-
-    # vytvoření pozadí pro text
-    text_surface = font.render(text, True, WHITE)
-    text_rect = text_surface.get_rect()
-    text_rect.center = (screen_x, screen_y)
-    
-    # pozadí
-    background_rect = text_rect.inflate(20, 10)
-    background_surface = pygame.Surface((background_rect.width, background_rect.height), pygame.SRCALPHA)
-    pygame.draw.rect(background_surface, (*BLACK, 180), (0, 0, background_rect.width, background_rect.height))
-    pygame.draw.rect(background_surface, BLUE, (0, 0, background_rect.width, background_rect.height), 2)
-    
-    # vykreslení na obrazovku
-    screen.blit(background_surface, background_rect.topleft)
-    screen.blit(text_surface, text_rect)
-
-# Funkce pro vykreslení mapy
-def draw_map(screen, camera_x, camera_y):
-    screen.fill(DARKER_GREEN)
-   
-    viditelnych_dlazdic_x = (SCREEN_WIDTH // TILE_SIZE) + 10
-    viditelnych_dlazdic_y = (SCREEN_HEIGHT // TILE_SIZE) + 10
-   
-    kamera_tile_x = camera_x // TILE_SIZE
-    kamera_tile_y = camera_y // TILE_SIZE
-   
-    start_x = max(0, int(kamera_tile_x - viditelnych_dlazdic_x // 2)) # Adjusted for visible tiles
-    end_x = min(MAP_WIDTH, int(kamera_tile_x + viditelnych_dlazdic_x // 2 + 1)) # Adjusted for visible tiles
-    start_y = max(0, int(kamera_tile_y - viditelnych_dlazdic_y // 2)) # Adjusted for visible tiles
-    end_y = min(MAP_HEIGHT, int(kamera_tile_y + viditelnych_dlazdic_y // 2 + 1)) # Adjusted for visible tiles
-   
-    # Vykreslení dlaždic
-    for y_tile in range(start_y, end_y): # Renamed y to y_tile to avoid conflict
-        for x_tile in range(start_x, end_x): # Renamed x to x_tile to avoid conflict
-            screen_x = (x_tile * TILE_SIZE - camera_x) + SCREEN_WIDTH // 2
-            screen_y = (y_tile * TILE_SIZE - camera_y) + SCREEN_HEIGHT // 2
-           
-            if -TILE_SIZE <= screen_x <= SCREEN_WIDTH+TILE_SIZE and -TILE_SIZE <= screen_y <= SCREEN_HEIGHT+TILE_SIZE:
-                barva = vypocitej_tmavost_hranice(x_tile, y_tile)
-                pygame.draw.rect(screen, barva, (screen_x, screen_y, TILE_SIZE, TILE_SIZE))
-   
-    # Vykreslení obrazových objektů
-    for img in images:
-        # Calculate image's center in world coordinates
-        img_world_center_x = img['x'] * TILE_SIZE + img['width'] / 2
-        img_world_center_y = img['y'] * TILE_SIZE + img['height'] / 2
-
-        # Convert image's world center to screen coordinates
-        screen_x = int(img_world_center_x - camera_x + SCREEN_WIDTH // 2 - img['width'] / 2)
-        screen_y = int(img_world_center_y - camera_y + SCREEN_HEIGHT // 2 - img['height'] / 2)
-        
-        # Only blit if it's potentially on screen
-        if -img['width'] < screen_x < SCREEN_WIDTH and -img['height'] < screen_y < SCREEN_HEIGHT:
-            screen.blit(img['image'], (screen_x, screen_y))
-
-# Funkce pro vykreslení hráče a zbraně
-def draw_player(screen, offset_x, offset_y):
-    global player_hidden # No need for player_alpha here, it's calculated before draw
-    
-    if player_hidden: # Don't draw if hidden
-        return
-
-    screen_x = int(player_x - offset_x + SCREEN_WIDTH // 2)
-    screen_y = int(player_y - offset_y + SCREEN_HEIGHT // 2)
-   
-    # Determine player alpha based on proximity to bush
-    player_alpha = 255
-    # Calculate distance to bush using world coordinates
-    dist_to_bush = distance([player_x, player_y], bush_pos)
-    # The condition for player alpha should also be based on the bush_collision_radius
-    if dist_to_bush < bush_collision_radius: # If near bush, make slightly transparent
-        player_alpha = 200
-    
-    if player_texture:
-        texture_to_draw = player_texture.copy()
-        
-        if player_team == 3:
-            texture_to_draw.fill(BLUE, special_flags=pygame.BLEND_RGBA_MULT)
-        
-        # Apply alpha to player texture
-        texture_to_draw.set_alpha(player_alpha)
-
-        rotated_texture = pygame.transform.rotate(texture_to_draw, -player_angle)
-        rot_rect = rotated_texture.get_rect(center=(screen_x, screen_y))
-        screen.blit(rotated_texture, rot_rect.topleft)
-        
-        if current_weapon in weapon_textures:
-            weapon_info = WEAPONS[current_weapon]
-            weapon_texture = weapon_textures[current_weapon]
-            
-            angle_rad = math.radians(player_angle - 90)
-            offset_distance = weapon_info["offset_x"]
-            
-            weapon_offset_x = math.cos(angle_rad) * offset_distance
-            weapon_offset_y = math.sin(angle_rad) * offset_distance
-            
-            weapon_x = screen_x + weapon_offset_x
-            weapon_y = screen_y + weapon_offset_y
-            
-            rotated_weapon = pygame.transform.rotate(weapon_texture, -player_angle)
-            weapon_rect = rotated_weapon.get_rect(center=(weapon_x, weapon_y))
-            
-            screen.blit(rotated_weapon, weapon_rect.topleft)
-    else:
-        # Fallback circle, also with alpha
-        color = (*(RED if player_team == 2 else BLUE), player_alpha)
-        player_surface = pygame.Surface((player_radius*2, player_radius*2), pygame.SRCALPHA)
-        pygame.draw.circle(player_surface, color, (player_radius, player_radius), player_radius)
-        screen.blit(player_surface, (screen_x - player_radius, screen_y - player_radius))
-
-# Funkce pro vykreslení ostatních hráčů z multiplayer
-def draw_other_players(screen, camera_x, camera_y):
-    for player_id, pos in players_interpolated.items():
-        if isinstance(pos, dict) and pos.get('hidden', False): # Don't draw if hidden on server
-            continue
-
-        if isinstance(pos, list) or isinstance(pos, tuple):
-            net_x, net_y = pos[0], pos[1]
-        elif isinstance(pos, dict):
-            net_x, net_y = pos['x'], pos['y']
-        else:
-            continue # Skip invalid player data
-
-        if player_id != my_id:
-            # Convert network coordinates (which are now map coordinates) to screen coordinates
-            screen_x = int(net_x - camera_x + SCREEN_WIDTH // 2)
-            screen_y = int(net_y - camera_y + SCREEN_HEIGHT // 2)
-            
-            # Vykreslení ostatních hráčů (simple green rect for now)
-            pygame.draw.rect(screen, GREEN, (screen_x - player_radius//2, screen_y - player_radius//2, player_radius, player_radius))
-
-# New function to draw the arrow pointing to the bush
-def draw_bush_arrow(screen, player_x, player_y, bush_x, bush_y, camera_x, camera_y):
-    # Convert player and bush world coordinates to screen coordinates
-    player_screen_x = int(player_x - camera_x + SCREEN_WIDTH // 2)
-    player_screen_y = int(player_y - camera_y + SCREEN_HEIGHT // 2)
+# Draw arrow to bush
+def draw_bush_arrow(surface, player_x, player_y, bush_x, bush_y, camera_x, camera_y):
+    # Calculate screen coordinates for player and bush
+    player_screen_x = SCREEN_WIDTH // 2
+    player_screen_y = SCREEN_HEIGHT // 2
     bush_screen_x = int(bush_x - camera_x + SCREEN_WIDTH // 2)
     bush_screen_y = int(bush_y - camera_y + SCREEN_HEIGHT // 2)
 
-    # Calculate angle from player to bush
-    dx = bush_screen_x - player_screen_x
-    dy = bush_screen_y - player_screen_y
-    angle_rad = math.atan2(dy, dx)
+    # Calculate distance and angle
+    distance = math.sqrt((bush_x - player_x)**2 + (bush_y - player_y)**2)
+    angle = math.atan2(bush_screen_y - player_screen_y, bush_screen_x - player_screen_x)
 
-    # Calculate arrow position (e.g., 50 pixels from player's center)
-    arrow_distance_from_player = 100 # How far from the player the arrow should be
-    arrow_x = player_screen_x + arrow_distance_from_player * math.cos(angle_rad)
-    arrow_y = player_screen_y + arrow_distance_from_player * math.sin(angle_rad)
-
-    # Draw the arrow as a triangle
-    arrow_size = 20
+    # Define arrow properties
+    arrow_length = 50
+    arrow_thickness = 3
+    arrow_color = YELLOW
     
-    # Define triangle points relative to arrow_x, arrow_y
-    # Pointing towards the bush
-    point1 = (arrow_x + arrow_size * math.cos(angle_rad + math.pi/2), 
-              arrow_y + arrow_size * math.sin(angle_rad + math.pi/2))
-    point2 = (arrow_x + arrow_size * math.cos(angle_rad - math.pi/2), 
-              arrow_y + arrow_size * math.sin(angle_rad - math.pi/2))
-    point3 = (arrow_x + arrow_size * 2 * math.cos(angle_rad), 
-              arrow_y + arrow_size * 2 * math.sin(angle_rad))
-
-    pygame.draw.polygon(screen, RED, [point1, point2, point3])
+    # Position the arrow near the edge of the screen, pointing towards the bush
+    # Adjust position to be visible but not covering the player
     
-    # Optional: Draw a small circle at the base for better visibility
-    pygame.draw.circle(screen, RED, (int(arrow_x), int(arrow_y)), arrow_size // 3)
+    # Define a radius for the arrow to appear around the player
+    arrow_circle_radius = min(SCREEN_WIDTH, SCREEN_HEIGHT) / 2 - 20 # Keep it inside the screen boundary
 
+    arrow_start_x = player_screen_x + arrow_circle_radius * math.cos(angle)
+    arrow_start_y = player_screen_y + arrow_circle_radius * math.sin(angle)
+    
+    arrow_end_x = player_screen_x + (arrow_circle_radius + arrow_length) * math.cos(angle)
+    arrow_end_y = player_screen_y + (arrow_circle_radius + arrow_length) * math.sin(angle)
+
+    # Draw the arrow line
+    pygame.draw.line(surface, arrow_color, (arrow_start_x, arrow_start_y), (arrow_end_x, arrow_end_y), arrow_thickness)
+
+    # Draw the arrowhead (triangle)
+    # Calculate points for the arrowhead
+    arrowhead_size = 15
+    point1_x = arrow_end_x
+    point1_y = arrow_end_y
+    point2_x = arrow_end_x - arrowhead_size * math.cos(angle - math.pi / 6)
+    point2_y = arrow_end_y - arrowhead_size * math.sin(angle - math.pi / 6)
+    point3_x = arrow_end_x - arrowhead_size * math.cos(angle + math.pi / 6)
+    point3_y = arrow_end_y - arrowhead_size * math.sin(angle + math.pi / 6)
+
+    pygame.draw.polygon(surface, arrow_color, [(point1_x, point1_y), (point2_x, point2_y), (point3_x, point3_y)])
+
+# Funkce pro vykreslení hráče
+def draw_player(surface, player_data, camera_x, camera_y, is_self=False):
+    p_x = player_data['x']
+    p_y = player_data['y']
+    p_color = player_data['color']
+    p_angle = player_data.get('angle', 0) # Get angle, default to 0 if not present
+    p_hidden = player_data.get('hidden', False) # Get hidden status, default to False
+
+    # Interpolace pro plynulý pohyb ostatních hráčů
+    if not is_self and player_data['id'] in players_interpolated:
+        interpolated_x = players_interpolated[player_data['id']]['x']
+        interpolated_y = players_interpolated[player_data['id']]['y']
+        
+        target_x = p_x
+        target_y = p_y
+
+        interpolated_x += (target_x - interpolated_x) * other_players_interpolation_factor
+        interpolated_y += (target_y - interpolated_y) * other_players_interpolation_factor
+        
+        p_x = interpolated_x
+        p_y = interpolated_y
+        players_interpolated[player_data['id']]['x'] = interpolated_x
+        players_interpolated[player_data['id']]['y'] = interpolated_y
+    else:
+        # Initialize interpolated position for new players or for self
+        players_interpolated[player_data['id']] = {'x': p_x, 'y': p_y}
+
+    # World coordinates to screen coordinates
+    screen_x = int(p_x - camera_x + SCREEN_WIDTH // 2)
+    screen_y = int(p_y - camera_y + SCREEN_HEIGHT // 2)
+
+    # Rotate player texture
+    rotated_player_texture = pygame.transform.rotate(player_texture, -p_angle) # Negative angle for correct rotation
+    new_rect = rotated_player_texture.get_rect(center=(screen_x, screen_y))
+
+    # Apply transparency if hidden and not self
+    if p_hidden: # Only make other players hidden, self remains visible to self
+        alpha = 0 # 100 out of 255 for partial transparency
+        rotated_player_texture.set_alpha(alpha)
+    else:
+        rotated_player_texture.set_alpha(255) # Full opacity
+
+    surface.blit(rotated_player_texture, new_rect)
+
+    # Draw weapon
+    current_weapon_texture = weapon_textures.get(player_data['current_weapon'])
+    if current_weapon_texture:
+        # Calculate weapon position relative to player
+        weapon_info = WEAPONS[player_data['current_weapon']]
+        offset_x = weapon_info["offset_x"]
+        offset_y = weapon_info["offset_y"]
+        
+        # Calculate weapon rotation
+        weapon_angle_rad = math.radians(p_angle)
+        
+        # Apply rotation to offset
+        rotated_offset_x = offset_x * math.cos(weapon_angle_rad) - offset_y * math.sin(weapon_angle_rad)
+        rotated_offset_y = offset_x * math.sin(weapon_angle_rad) + offset_y * math.cos(weapon_angle_rad)
+
+        weapon_screen_x = screen_x + rotated_offset_x
+        weapon_screen_y = screen_y + rotated_offset_y
+
+        # Rotate weapon texture
+        rotated_weapon_texture = pygame.transform.rotate(current_weapon_texture, -p_angle)
+        if p_hidden:
+            rotated_weapon_texture.set_alpha(alpha) # Use the same alpha value as the player
+        else:
+            rotated_weapon_texture.set_alpha(255)
+        weapon_rect = rotated_weapon_texture.get_rect(center=(weapon_screen_x, weapon_screen_y))
+        surface.blit(rotated_weapon_texture, weapon_rect)
+
+
+    # Draw player ID above head
+    player_id_text = font.render(f"ID: {player_data['id']}", True, WHITE)
+    id_rect = player_id_text.get_rect(center=(screen_x, screen_y - player_radius - 10))
+    surface.blit(player_id_text, id_rect)
+
+    # Draw player team color behind player ID
+    if player_data['team'] == 2:
+        team_color_text = font.render(f"Team A", True, RED)
+    elif player_data['team'] == 3:
+        team_color_text = font.render(f"Team B", True, BLUE)
+    else:
+        team_color_text = font.render(f"No Team", True, WHITE)
+    team_rect = team_color_text.get_rect(center=(screen_x, screen_y - player_radius - 30))
+    surface.blit(team_color_text, team_rect)
+
+# Funkce pro vykreslení promptu
+def draw_prompt(text, pos, player_world_x, player_world_y, camera_x, camera_y):
+    # Convert world coordinates to screen coordinates
+    screen_x = int(pos[0] - camera_x + SCREEN_WIDTH // 2)
+    screen_y = int(pos[1] - camera_y + SCREEN_HEIGHT // 2)
+
+    prompt_text = font.render(text, True, YELLOW)
+    prompt_rect = prompt_text.get_rect(center=(screen_x, screen_y))
+
+    # --- ADDED: Draw semi-transparent background for the prompt ---
+    background_color = BLACK # Or any dark color you prefer
+    padding = 5 # Padding around the text
+    background_rect = pygame.Rect(prompt_rect.left - padding, prompt_rect.top - padding,
+                                  prompt_rect.width + 2 * padding, prompt_rect.height + 2 * padding)
+    
+    # Create a surface for the background with alpha
+    background_surface = pygame.Surface(background_rect.size, pygame.SRCALPHA)
+    background_surface.fill((*background_color, 180)) # 180 out of 255 for transparency
+
+    screen.blit(background_surface, background_rect.topleft)
+    # --- END ADDED SECTION ---
+
+    screen.blit(prompt_text, prompt_rect)
 
 # Funkce pro vykreslení UI
-def draw_ui(screen, font):
-    # Vykreslení zbraně v levém dolním rohu
-    weapon_info_bg = pygame.Rect(10, SCREEN_HEIGHT - 60, 300, 50)
-    pygame.draw.rect(screen, (0, 0, 0, 128), weapon_info_bg)
-    
-    # Zobrazení jména zbraně
+def draw_ui(surface, font):
+    # Current Weapon Display
     weapon_text = font.render(f"Weapon: {current_weapon}", True, WHITE)
-    screen.blit(weapon_text, (20, SCREEN_HEIGHT - 50))
-    
-    # Vykreslení cooldownu zbraně
-    cooldown = weapon_cooldowns[current_weapon]
-    cooldown_max = WEAPONS[current_weapon]["cooldown"]
-    cooldown_text = font.render(f"Cooldown: {cooldown}/{cooldown_max}", True, WHITE)
-    screen.blit(cooldown_text, (20, SCREEN_HEIGHT - 30))
-    
-    # Instrukce pro přepínání zbraní
-    instructions = font.render("Mouse Wheel to change weapons, LMB to shoot", True, WHITE)
-    screen.blit(instructions, (400, 550))    
-    # Network status
-    status_color = GREEN if connected else RED
-    status_text = font.render(status, True, status_color)
-    players_text = font.render(f"Hráči: {len(players)}", True, WHITE)
-    my_id_text = font.render(f"Moje ID: {my_id}", True, my_color)
-    
-    # Zobrazení odezvy serveru
+    surface.blit(weapon_text, (10, 10))
+
+    # Cooldown Display
+    cooldown_time = weapon_cooldowns[current_weapon]
+    if cooldown_time > 0:
+        cooldown_display = f"Cooldown: {cooldown_time / 60:.1f}s" # Convert frames to seconds
+        cooldown_color = RED
+    else:
+        cooldown_display = "Ready"
+        cooldown_color = GREEN
+    cooldown_text = font.render(cooldown_display, True, cooldown_color)
+    surface.blit(cooldown_text, (10, 30))
+
+    # Response Time Display
     if response_time is not None:
-        response_text = font.render(f"Odezva: {response_time:.2f} ms", True, YELLOW)
-        screen.blit(response_text, (10, 100))
+        response_text = font.render(f"Ping: {int(response_time*1000)}ms", True, WHITE)
+        surface.blit(response_text, (SCREEN_WIDTH - response_text.get_width() - 10, 10))
     
-    # Zobrazení pohybového stavu
-    move_text = font.render("Pohyb" if is_moving else "Stojím", True, YELLOW if is_moving else GREEN)
-    screen.blit(move_text, (600, 40))
-    
-    # Zobrazení pozice
-    pos_text = font.render(f"Pozice: {player_x:.1f}, {player_y:.1f}", True, WHITE)
-    screen.blit(pos_text, (600, 70))
+    # Connection Status
+    status_text = font.render(f"Status: {status}", True, WHITE)
+    surface.blit(status_text, (SCREEN_WIDTH - status_text.get_width() - 10, 30))
 
-    screen.blit(status_text, (10, 10))
-    screen.blit(players_text, (10, 40))
-    screen.blit(my_id_text, (10, 70))
-
-# Funkce pro získání aktuální pozice hráče v dlaždicích
-def get_player_tile_position():
-    return int(player_x // TILE_SIZE), int(player_y // TILE_SIZE)
-
-# Funkce pro výpočet úhlu mezi hráčem a kurzorem myši
-def calculate_angle_to_mouse(player_screen_x, player_screen_y):
-    mouse_x, mouse_y = pygame.mouse.get_pos()
-    dx = mouse_x - player_screen_x
-    dy = mouse_y - player_screen_y
-    angle = math.degrees(math.atan2(dy, dx)) + 90
-    return angle
-
-# Funkce pro střelbu ze zbraně
-def shoot(weapon_name):
-    global weapon_cooldowns
-    
-    # Kontrola cooldownu
-    if weapon_cooldowns[weapon_name] > 0:
-        return False
-    
-    # Nastavení cooldownu zbraně
-    weapon_cooldowns[weapon_name] = WEAPONS[weapon_name]["cooldown"]
-    
-    # Zde by mohla být implementace střelby s efekty, projektily, atd.
-    print(f"Střelba ze zbraně: {weapon_name}, poškození: {WEAPONS[weapon_name]['damage']}")
-    
-    return True
-
-# Funkce pro změnu zbraně
-def change_weapon(direction):
-    global current_weapon_index, current_weapon
-    
-    current_weapon_index = (current_weapon_index + direction) % len(weapon_names)
-    current_weapon = weapon_names[current_weapon_index]
-    print(f"Zbraň změněna na: {current_weapon}")
-
-# WebSocket komunikace a herní smyčka
-async def game_loop():
-    global players, players_interpolated, players_prev, connected, status
-    global x, y, player_x, player_y, my_id, response_time, last_update_time, is_moving
-    global player_angle, current_weapon, weapon_cooldowns
-    global player_hidden, hide_pressed, player_prev_pos, particles, bush_pos, bush_collision_radius
-    global show_bush_arrow # Declare global for the new variable
-
-    # Připojení k serveru
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.ws_connect(SERVER_URL) as ws:
-                connected = True
-                status = "Připojeno"
-                print("Připojeno k serveru")
-
-                # Počáteční odeslání pozice pro registraci (using map coordinates now)
-                await ws.send_json({"x": player_x, "y": player_y})
-                last_update_time = time.time()
-
-                # Hlavní herní smyčka
-                running = True
-                while running:
-                    current_time = time.time()
-
-                    # Zpracování událostí
-                    for event in pygame.event.get():
-                        if event.type == pygame.QUIT or (event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE):
-                            running = False
-                        elif event.type == pygame.K_t:
-                            player_tile_x, player_tile_y = get_player_tile_position()
-                            add_image("images/tree1.png", player_tile_x + 2, player_tile_y + 2, 2.0)
-                        elif event.type == pygame.KEYDOWN:
-                            if event.key == pygame.K_e: # Handling E key for hide/unhide
-                                if not hide_pressed:
-                                    hide_pressed = True
-                            # Check for Ctrl+A
-                            if event.key == pygame.K_a and (pygame.key.get_mods() & pygame.KMOD_LCTRL or pygame.key.get_mods() & pygame.KMOD_RCTRL):
-                                show_bush_arrow = not show_bush_arrow # Toggle visibility
-                                print(f"Bush arrow visibility: {show_bush_arrow}")
-                        elif event.type == pygame.KEYUP:
-                            if event.key == pygame.K_e: # Handling E key for hide/unhide
-                                hide_pressed = False
-                        elif event.type == pygame.MOUSEBUTTONDOWN:
-                            if event.button == 1:
-                                if not player_hidden: # Can only shoot if not hidden
-                                    shoot(current_weapon)
-                            elif event.button == 4:
-                                change_weapon(1)
-                            elif event.button == 5:
-                                change_weapon(-1)
-
-                    # Zpracování vstupů
-                    keys = pygame.key.get_pressed()
-                    dx, dy = 0, 0
-
-                    if keys[pygame.K_w] or keys[pygame.K_UP]: dy -= PLAYER_SPEED
-                    if keys[pygame.K_s] or keys[pygame.K_DOWN]: dy += PLAYER_SPEED
-                    if keys[pygame.K_a] or keys[pygame.K_LEFT]: dx -= PLAYER_SPEED
-                    if keys[pygame.K_d] or keys[pygame.K_RIGHT]: dx += PLAYER_SPEED
-
-                    if dx != 0 and dy != 0:
-                        dx *= 0.7071
-                        dy *= 0.7071
-
-                    # Aktualizace stavu pohybu
-                    # Only consider movement if player is not hidden
-                    moved = (dx != 0 or dy != 0) and not player_hidden
-                    is_moving = moved
-
-                    # Provedení pohybu
-                    if moved:
-                        move_player(dx, dy)
-                    
-                    # Update previous player position for bush collision detection
-                    # This was moved into move_player, but needs to be careful if move_player returns False
-                    # so player_prev_pos needs to be updated outside this conditional too.
-                    # For now, it's handled inside move_player.
-
-                    # Výpočet úhlu mezi hráčem a kurzorem myši
-                    player_screen_x = int(SCREEN_WIDTH // 2)
-                    player_screen_y = int(SCREEN_HEIGHT // 2)
-                    player_angle = calculate_angle_to_mouse(player_screen_x, player_screen_y)
-                    
-                    # Aktualizace cooldownů zbraní
-                    for weapon in weapon_cooldowns:
-                        if weapon_cooldowns[weapon] > 0:
-                            weapon_cooldowns[weapon] -= 1
-
-                    # Posílání dat serveru (při pohybu nebo po uplynutí intervalu)
-                    # Send player_x, player_y which are world coordinates
-                    if moved or current_time - last_update_time >= UPDATE_INTERVAL:
-                        start_time = time.time()
-                        await ws.send_json({"x": player_x, "y": player_y, "hidden": player_hidden}) # Send hidden state
-                        last_update_time = current_time
-                    
-                    # Přijímání dat od serveru (non-blocking)
-                    try:
-                        msg = await asyncio.wait_for(ws.receive(), 0.01)
-                        if msg.type == aiohttp.WSMsgType.TEXT:
-                            players_prev = players_interpolated.copy() if players_interpolated else {}
-                            
-                            data = json.loads(msg.data)
-                            players = data
-
-                            if moved:
-                                response_time = (time.time() - start_time) * 1000
-
-                            if my_id is None:
-                                # Find our ID based on the sent world coordinates
-                                for pid, p_data in players.items():
-                                    if isinstance(p_data, list) or isinstance(p_data, tuple): # Old format
-                                        if abs(p_data[0] - player_x) < TILE_SIZE and abs(p_data[1] - player_y) < TILE_SIZE: # Adjusted tolerance
-                                            my_id = pid
-                                            print(f"Moje ID: {my_id}")
-                                            break
-                                    elif isinstance(p_data, dict): # New format with 'hidden'
-                                        if abs(p_data['x'] - player_x) < TILE_SIZE and abs(p_data['y'] - player_y) < TILE_SIZE:
-                                            my_id = pid
-                                            print(f"Moje ID: {my_id}")
-                                            break
-                                
-                            # Aktualizace našeho hráče v datech (lokální přepis)
-                            if my_id:
-                                players[my_id] = {"x": player_x, "y": player_y, "hidden": player_hidden} # Ensure our local state is correct in 'players'
-                                
-                            if not players_prev:
-                                players_prev = players.copy()
-                                players_interpolated = players.copy()
-
-                        elif msg.type in (aiohttp.WSMsgType.CLOSED, aiohttp.WSMsgType.ERROR):
-                            connected = False
-                            status = "Spojení ukončeno"
-                            break
-                    except asyncio.TimeoutError:
-                        pass
-                    
-                    # Update status
-                    if is_moving:
-                        status = "Připojeno (pohyb)"
-                    else:
-                        status = "Připojeno (stabilní)"
-                    
-                    # Interpolace pozic ostatních hráčů
-                    players_interpolated = {}
-                    for player_id, p_data in players.items():
-                        if isinstance(p_data, list) or isinstance(p_data, tuple): # Handle old format from server if necessary
-                            new_x, new_y = p_data[0], p_data[1]
-                            new_hidden = False # Default to not hidden if old format
-                        elif isinstance(p_data, dict): # New format
-                            new_x, new_y = p_data['x'], p_data['y']
-                            new_hidden = p_data.get('hidden', False) # Default to False if 'hidden' not present
-                        else:
-                            continue # Skip invalid player data
-
-                        if player_id == my_id:
-                            # For our player, use exact local position and hidden state
-                            players_interpolated[player_id] = {"x": player_x, "y": player_y, "hidden": player_hidden}
-                        elif player_id in players_prev and isinstance(players_prev[player_id], (dict, list)):
-                            # For other players, interpolate for smooth movement
-                            prev_data = players_prev[player_id]
-                            if isinstance(prev_data, list): # Old format
-                                prev_x, prev_y = prev_data[0], prev_data[1]
-                            else: # New format
-                                prev_x, prev_y = prev_data['x'], prev_data['y']
-
-                            interpolated_x = prev_x + (new_x - prev_x) * other_players_interpolation_factor
-                            interpolated_y = prev_y + (new_y - prev_y) * other_players_interpolation_factor
-                            players_interpolated[player_id] = {"x": interpolated_x, "y": interpolated_y, "hidden": new_hidden}
-                        else:
-                            # If no previous position, use current
-                            players_interpolated[player_id] = {"x": new_x, "y": new_y, "hidden": new_hidden}
-
-
-                    # Vykreslení
-                    draw_map(screen, player_x, player_y)
-                    
-                    # Get bush collision data from draw_boxy_bush
-                    player_near_bush, bush_col_center, bush_col_radius = draw_boxy_bush(bush_pos, bush_collision_radius, [player_x, player_y], player_hidden, player_x, player_y)
-
-                    # Check bush collision for particles using the new collision data
-                    if ([player_x, player_y] != player_prev_pos) and not player_hidden: # Only if player moved and is not hidden
-                        check_bush_collision(player_prev_pos, [player_x, player_y], bush_col_center, bush_col_radius)
-
-                    # Handle hide/unhide logic
-                    if hide_pressed:
-                        # Use the same 'player_near_bush' from draw_boxy_bush which now uses the more accurate collision circle
-                        if player_near_bush and not player_hidden:
-                            player_hidden = True
-                            for _ in range(20):
-                                color = random.choice(BUSH_PARTICLE_SHADES) # Use BUSH_PARTICLE_SHADES for particles
-                                particles.append(Particle(player_x, player_y, color))
-                        elif player_hidden:
-                            player_hidden = False
-                            for _ in range(20):
-                                color = random.choice(BUSH_PARTICLE_SHADES) # Use BUSH_PARTICLE_SHADES for particles
-                                particles.append(Particle(player_x, player_y, color))
-                        hide_pressed = False
-                    
-                    # Update and draw particles
-                    for particle in particles[:]:
-                        particle.update()
-                        if particle.is_dead():
-                            particles.remove(particle)
-                        else:
-                            particle.draw(screen, player_x, player_y) # Pass camera coords
-
-                    draw_player(screen, player_x, player_y) # This function now handles player_hidden status
-                    draw_other_players(screen, player_x, player_y)
-                    
-                    # Draw prompts for bush interaction
-                    # These also use 'player_near_bush' for consistency
-                    if player_near_bush and not player_hidden:
-                        draw_prompt("Press E to hide", [player_x, player_y - 50], player_x, player_y)
-                    elif player_hidden:
-                        draw_prompt("Press E to exit", [bush_pos[0], bush_pos[1] - 80], player_x, player_y)
-                    
-                    # Draw the bush arrow if visible
-                    if show_bush_arrow:
-                        draw_bush_arrow(screen, player_x, player_y, bush_pos[0], bush_pos[1], player_x, player_y)
-
-                    # Vykreslení UI
-                    draw_ui(screen, font)
-                    
-                    # FPS počítadlo
-                    fps = clock.get_fps()
-                    fps_text = font.render(f"FPS: {fps:.1f}", True, YELLOW)
-                    screen.blit(fps_text, (600, 10))
-
-                    pygame.display.flip()
-                    clock.tick(60)
-                    
-                    await asyncio.sleep(0)
-
-    except aiohttp.ClientError as e:
-        connected = False
-        status = f"Chyba: {str(e)}"
-        print(f"Chyba připojení: {e}")
-    except Exception as e:
-        connected = False
-        status = f"Chyba: {str(e)}"
-        print(f"Neočekávaná chyba: {e}")
-
-# Hlavní funkce
+# Main game loop
 async def main():
-    try:
-        await game_loop()
-    finally:
-        pygame.quit()
+    global player_x, player_y, player_angle, my_id, connected, status, response_time, current_weapon_index, current_weapon, hide_pressed, player_hidden, show_bush_arrow, last_update_time, current_hiding_bush_index, particles
 
-# Spuštění hry
+    uri = SERVER_URL
+    
+    session = aiohttp.ClientSession()
+
+    async with session.ws_connect(uri) as ws:
+        connected = True
+        status = "Připojeno"
+        print("Připojeno k serveru.")
+
+        # První odeslání dat o hráči po připojení
+        await ws.send_json({
+            'type': 'player_update',
+            'x': player_x,
+            'y': player_y,
+            'color': my_color,
+            'angle': player_angle,
+            'team': player_team,
+            'current_weapon': current_weapon,
+            'hidden': player_hidden, # Send initial hidden status
+            # Important: If server is authoritative for bush positions, they should be received here.
+            # For now, client-side bushes are random.
+        })
+
+        async def send_player_data():
+            global player_x, player_y, player_angle, my_id, connected, status, response_time, current_weapon_index, current_weapon, hide_pressed, player_hidden, show_bush_arrow, last_update_time, current_hiding_bush_index, particles
+
+            if connected:
+                current_time = time.time()
+                if is_moving or (current_time - last_update_time > UPDATE_INTERVAL):
+                    try:
+                        data = {
+                            'type': 'player_update',
+                            'x': player_x,
+                            'y': player_y,
+                            'color': my_color,
+                            'angle': player_angle,
+                            'team': player_team,
+                            'current_weapon': current_weapon,
+                            'hidden': player_hidden,
+                            'current_hiding_bush_index': current_hiding_bush_index
+                        }
+                        await ws.send_json(data)
+                        last_update_time = current_time
+                    except Exception as e:
+                        print(f"Chyba při odesílání dat: {e}")
+                        connected = False
+
+        async def receive_messages():
+            global player_x, player_y, player_angle, my_id, connected, status, response_time, current_weapon_index, current_weapon, hide_pressed, player_hidden, show_bush_arrow, last_update_time, current_hiding_bush_index, particles
+            try:
+                async for msg in ws:
+                    if msg.type == aiohttp.WSMsgType.TEXT:
+                        message = json.loads(msg.data)
+                        if message['type'] == 'init' and my_id is None:
+                            my_id = message['id']
+                            print(f"Moje ID: {my_id}")
+                            # If server sends initial bush positions, uncomment and process here
+                            # if 'bush_positions' in message:
+                            #     bush_positions = message['bush_positions']
+                            #     # If radii are also server-sided
+                            #     # bush_collision_radii = message.get('bush_collision_radii', [player_radius * 1.25] * len(bush_positions))
+
+                        elif message['type'] == 'players_data':
+                            new_players = {}
+                            for player_id, p_data in message['players'].items():
+                                if player_id != my_id:
+                                    # Store previous position for interpolation
+                                    if player_id not in players_prev:
+                                        players_prev[player_id] = {'x': p_data['x'], 'y': p_data['y']}
+                                    else:
+                                        players_prev[player_id]['x'] = players.get(player_id, {}).get('x', p_data['x'])
+                                        players_prev[player_id]['y'] = players.get(player_id, {}).get('y', p_data['y'])
+                                    new_players[player_id] = p_data
+                                else:
+                                    # For the client's own player, ensure its own hidden state is synchronized from server
+                                    # The server is authoritative for the hidden state.
+                                    player_hidden = p_data.get('hidden', False)
+                                    current_hiding_bush_index = p_data.get('current_hiding_bush_index', -1)
+                            players = new_players
+                            # Calculate response time
+                            if 'timestamp' in message:
+                                response_time = time.time() - message['timestamp']
+                        elif message['type'] == 'player_disconnected':
+                            if message['id'] in players:
+                                del players[message['id']]
+                                if message['id'] in players_interpolated:
+                                    del players_interpolated[message['id']]
+                                if message['id'] in players_prev:
+                                    del players_prev[message['id']]
+                                print(f"Hráč {message['id']} odpojen.")
+                    elif msg.type == aiohttp.WSMsgType.ERROR:
+                        print(f"Chyba ve websocketu: {ws.exception()}")
+                        connected = False
+                        break
+            except Exception as e:
+                print(f"Chyba při přijímání zpráv: {e}")
+                connected = False
+
+        # Spuštění úloh na pozadí
+        producer_task = asyncio.create_task(send_player_data())
+        consumer_task = asyncio.create_task(receive_messages())
+
+        # Game loop
+        try:
+            while True:
+                player_near_any_bush = False
+                for i, bush_pos in enumerate(bush_positions):
+                    dist_to_bush = math.sqrt((player_x - bush_pos[0])**2 + (player_y - bush_pos[1])**2)
+                    if dist_to_bush < bush_collision_radii[i] + player_radius:
+                        player_near_any_bush = True
+                        break # Found a bush, no need to check others
+
+                for event in pygame.event.get():
+                    if event.type == pygame.QUIT:
+                        print("Hra ukončena uživatelem.")
+                        pygame.quit()
+                        sys.exit()
+                    elif event.type == pygame.KEYDOWN:
+                        if event.key == pygame.K_q:
+                            current_weapon_index = (current_weapon_index - 1) % len(weapon_names)
+                            current_weapon = weapon_names[current_weapon_index]
+                        elif event.key == pygame.K_e:
+                            # Bush interaction
+                            if not hide_pressed: # Only toggle if key is pressed and was not pressed before
+                                if player_near_any_bush and not player_hidden: # Try to hide
+                                    # Find which bush the player is entering
+                                    for i, bush_pos in enumerate(bush_positions):
+                                        dist_to_bush = math.sqrt((player_x - bush_pos[0])**2 + (player_y - bush_pos[1])**2)
+                                        if dist_to_bush < bush_collision_radii[i] + player_radius:
+                                            current_hiding_bush_index = i
+                                            break
+                                    player_hidden = True
+                                    
+                                elif player_hidden: # Try to unhide (only if currently hidden)
+                                    player_hidden = False
+                                    current_hiding_bush_index = -1 # No longer hiding in any bush
+
+                                hide_pressed = True # Mark as pressed
+                                
+                                # Instantly send update to server about hidden status change
+                                await ws.send_json({
+                                    'type': 'player_update',
+                                    'x': player_x,
+                                    'y': player_y,
+                                    'color': my_color,
+                                    'angle': player_angle,
+                                    'team': player_team,
+                                    'current_weapon': current_weapon,
+                                    'hidden': player_hidden,
+                                    'current_hiding_bush_index': current_hiding_bush_index
+                                })
+                                # Generate particles on hide/unhide from the relevant bush
+                                particle_spawn_pos = bush_positions[current_hiding_bush_index] if current_hiding_bush_index != -1 else [player_x, player_y]
+                                for _ in range(20):
+                                    particles.append(Particle(particle_spawn_pos[0], particle_spawn_pos[1], random.choice(BUSH_PARTICLE_SHADES)))
+                        # Weapon firing (example, not fully implemented for server-side)
+                        elif event.key == pygame.K_SPACE:
+                            if weapon_cooldowns[current_weapon] <= 0:
+                                # Logic to fire weapon and reset cooldown
+                                weapon_cooldowns[current_weapon] = WEAPONS[current_weapon]["cooldown"]
+                                # print(f"{current_weapon} Fired!") # For debugging
+                    elif event.type == pygame.KEYUP:
+                        if event.key == pygame.K_e:
+                            hide_pressed = False # Reset hide_pressed when E is released
+
+                # Update weapon cooldowns
+                for name in weapon_cooldowns:
+                    if weapon_cooldowns[name] > 0:
+                        weapon_cooldowns[name] -= 1
+
+                # Pohyb hráče
+                keys = pygame.key.get_pressed()
+                dx, dy = 0, 0
+                if keys[pygame.K_a]:
+                    dx -= PLAYER_SPEED
+                if keys[pygame.K_d]:
+                    dx += PLAYER_SPEED
+                if keys[pygame.K_w]:
+                    dy -= PLAYER_SPEED
+                if keys[pygame.K_s]:
+                    dy += PLAYER_SPEED
+
+                if dx != 0 or dy != 0:
+                    is_moving = True
+                    move_player(dx, dy)
+                    # Update player angle based on movement direction
+                    if dx == 0 and dy < 0: # Up
+                        player_angle = 90
+                    elif dx == 0 and dy > 0: # Down
+                        player_angle = 270
+                    elif dx < 0 and dy == 0: # Left
+                        player_angle = 180
+                    elif dx > 0 and dy == 0: # Right
+                        player_angle = 0
+                    elif dx > 0 and dy < 0: # Up-Right
+                        player_angle = 45
+                    elif dx < 0 and dy < 0: # Up-Left
+                        player_angle = 135
+                    elif dx > 0 and dy > 0: # Down-Right
+                        player_angle = 315
+                    elif dx < 0 and dy > 0: # Down-Left
+                        player_angle = 225
+                else:
+                    is_moving = False
+
+                # Vypocet kamery
+                camera_x = player_x
+                camera_y = player_y
+
+                screen.fill(DARK_GREEN)
+
+                # Vykreslení hranic a mapy
+                for y_tile in range(MAP_HEIGHT):
+                    for x_tile in range(MAP_WIDTH):
+                        tile_color = vypocitej_tmavost_hranice(x_tile, y_tile)
+                        pygame.draw.rect(screen, tile_color, (x_tile * TILE_SIZE - camera_x + SCREEN_WIDTH // 2,
+                                                            y_tile * TILE_SIZE - camera_y + SCREEN_HEIGHT // 2,
+                                                            TILE_SIZE, TILE_SIZE))
+
+                # Vykreslení obrázků
+                for img in images:
+                    img_screen_x = int(img['x'] * TILE_SIZE - camera_x + SCREEN_WIDTH // 2)
+                    img_screen_y = int(img['y'] * TILE_SIZE - camera_y + SCREEN_HEIGHT // 2)
+                    screen.blit(img['image'], (img_screen_x, img_screen_y))
+                
+                # Update and draw particles
+                for i, p in enumerate(particles):
+                    p.update()
+                    p.draw(screen, camera_x, camera_y)
+                particles = [p for p in particles if not p.is_dead()]
+
+                # Draw all bushes
+                for i, bush_pos_single in enumerate(bush_positions):
+                    draw_boxy_bush(bush_pos_single, bush_collision_radii[i], [player_x, player_y], player_hidden, camera_x, camera_y)
+
+                # Vykreslení ostatních hráčů
+                for p_id, p_data in players.items():
+                    draw_player(screen, p_data, camera_x, camera_y, is_self=False)
+
+                # Vykreslení našeho hráče (always draw on top, always visible to self)
+                draw_player(screen, {'id': my_id, 'x': player_x, 'y': player_y, 'color': my_color, 'angle': player_angle, 'team': player_team, 'current_weapon': current_weapon, 'hidden': player_hidden}, camera_x, camera_y, is_self=True)
+
+                # Show hide prompt
+                # Find the closest bush to display the prompt or arrow
+                closest_bush_index = -1
+                min_dist_to_bush = float('inf')
+                for i, bush_pos_single in enumerate(bush_positions):
+                    dist = math.sqrt((player_x - bush_pos_single[0])**2 + (player_y - bush_pos_single[1])**2)
+                    if dist < min_dist_to_bush:
+                        min_dist_to_bush = dist
+                        closest_bush_index = i
+
+                if closest_bush_index != -1:
+                    current_bush_pos = bush_positions[closest_bush_index]
+                    current_bush_radius = bush_collision_radii[closest_bush_index]
+                    
+                    if min_dist_to_bush < current_bush_radius + player_radius and not player_hidden:
+                        draw_prompt("Press E to hide", [player_x, player_y - 50], player_x, player_y, camera_x, camera_y)
+                    elif player_hidden and closest_bush_index == current_hiding_bush_index: # Only show 'exit' prompt if hiding in this specific bush
+                        draw_prompt("Press E to exit", [current_bush_pos[0], current_bush_pos[1] - 80], player_x, player_y, camera_x, camera_y)
+                    
+                    # Show arrow to bush if not hidden and not near closest bush, and within a certain range
+                    if not player_hidden and min_dist_to_bush > current_bush_radius + player_radius and min_dist_to_bush < 500: # Example range
+                        show_bush_arrow = True 
+                        draw_bush_arrow(screen, player_x, player_y, current_bush_pos[0], current_bush_pos[1], camera_x, camera_y)
+                    else:
+                        show_bush_arrow = False
+                else: # No bushes found or too far
+                    show_bush_arrow = False
+
+
+                # Vykreslení UI
+                draw_ui(screen, font)
+                
+                # FPS počítadlo
+                fps = clock.get_fps()
+                fps_text = font.render(f"FPS: {fps:.1f}", True, YELLOW)
+                screen.blit(fps_text, (600, 10))
+
+                pygame.display.flip()
+                clock.tick(60)
+                
+                await asyncio.sleep(0) # Yield control to asyncio event loop
+
+        except aiohttp.ClientError as e:
+            connected = False
+            status = f"Chyba: {str(e)}"
+            print(f"Chyba připojení: {e}")
+        except Exception as e:
+            connected = False
+            status = f"Chyba: {str(e)}"
+            print(f"Neočekávaná chyba: {e}")
+
+    # Clean up
+    await session.close()
+    print("Spojení se serverem uzavřeno.")
+
 if __name__ == "__main__":
     asyncio.run(main())
