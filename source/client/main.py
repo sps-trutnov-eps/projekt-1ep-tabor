@@ -97,6 +97,7 @@ current_weapon_index = 0
 weapon_names = list(WEAPONS.keys())
 current_weapon = weapon_names[current_weapon_index]
 weapon_cooldowns = {name: 0 for name in WEAPONS}
+medkit_amount = 5 # celkový počet medkitů na mapě
 
 # Inicializace hráče
 x = random.randint(50, SCREEN_WIDTH-50)  # Inicializace pro klienta
@@ -405,33 +406,29 @@ def shoot(weapon_name):
 
 class Medkit:
     def __init__(self, x=0, y=0, size=80):
-        self.x = x  # Pozice v herním světě (ne na obrazovce)
-        self.y = y  # Pozice v herním světě (ne na obrazovce)
+        self.x = x  # Pozice na mapě (ne na obrazovce)
+        self.y = y  # Pozice na mapě (ne na obrazovce)
         self.size = size
-        # Načtení obrázku medkitu
+
         try:
             self.image = pygame.image.load("images/medkit.png").convert_alpha()
             self.image = pygame.transform.scale(self.image, (size, size))
         except Exception as e:
             print(f"Chyba při načítání medkitu: {e}")
-            # Vytvoření záložního obrázku, pokud se načtení nezdaří
             self.image = pygame.Surface((size, size), pygame.SRCALPHA)
             pygame.draw.rect(self.image, (255, 0, 0), (0, 0, size, size))
             pygame.draw.rect(self.image, (255, 255, 255), (size//4, size//4, size//2, size//2))
             pygame.draw.line(self.image, (255, 255, 255), (size//2, size//4), (size//2, size*3//4), 3)
     
     def draw(self, screen, camera_x, camera_y):
-        # Přepočet pozice v herním světě na pozici na obrazovce s ohledem na kameru
         screen_x = int(self.x - camera_x + SCREEN_WIDTH // 2)
         screen_y = int(self.y - camera_y + SCREEN_HEIGHT // 2)
         
-        # Vykreslení medkitu pouze pokud je viditelný na obrazovce
         if (-self.size <= screen_x <= SCREEN_WIDTH + self.size and 
             -self.size <= screen_y <= SCREEN_HEIGHT + self.size):
             screen.blit(self.image, (screen_x - self.size // 2, screen_y - self.size // 2))
     
     def get_rect(self):
-        # Vrátí obdélník pro detekci kolizí v souřadnicích herního světa
         return pygame.Rect(self.x - self.size // 2, self.y - self.size // 2, self.size, self.size)
 
 # Funkce pro kontrolu kolize hráče s medkitem
@@ -458,17 +455,14 @@ def check_medkit_collision(player_x, player_y, player_radius):
     
 # Nastavení itemů
 medkits = []
-for _ in range(5):  # Vytvoří 5 medkitů rozptýlených po mapě
-    # Náhodná pozice (v dlaždicích)
+for _ in range(medkit_amount):  # Vytvoří 5 medkitů rozptýlených po mapě
     tile_x = random.randint(BOUNDARY_WIDTH + 2, MAP_WIDTH - BOUNDARY_WIDTH - 2)
     tile_y = random.randint(BOUNDARY_WIDTH + 2, MAP_HEIGHT - BOUNDARY_WIDTH - 2)
     
-    # Převod na pozici v pixelech (střed dlaždice)
     medkit_x = tile_x * TILE_SIZE + TILE_SIZE // 2
     medkit_y = tile_y * TILE_SIZE + TILE_SIZE // 2
     
-    # Přidání medkitu do seznamu
-    medkits.append(Medkit(medkit_x, medkit_y, 30))
+    medkits.append(Medkit(medkit_x, medkit_y, size=80))
 
 # Funkce pro změnu zbraně
 def change_weapon(direction):
