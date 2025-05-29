@@ -154,6 +154,11 @@ for name, weapon_info in WEAPONS.items():
         placeholder = pygame.Surface((40, 15), pygame.SRCALPHA)
         pygame.draw.rect(placeholder, (200, 200, 200), (0, 0, 40, 15))
         weapon_textures[name] = placeholder
+        
+# Projektily    
+projectiles = []
+PROJECTILE_SPEED = 10
+PROJECTILE_LIFETIME = 60  # ve snímcích
 
 # Funkce pro přidání PNG obrázku na mapu
 def add_image(image_path, x, y, scale=1.0):
@@ -399,6 +404,22 @@ def shoot(weapon_name):
     # Nastavení cooldownu zbraně
     weapon_cooldowns[weapon_name] = WEAPONS[weapon_name]["cooldown"]
     
+    # Vytvoření projektilu
+    angle_rad = math.radians(player_angle - 90)
+    dx = math.cos(angle_rad)
+    dy = math.sin(angle_rad)
+
+    projectile = {
+        "x": player_x,
+        "y": player_y,
+        "dx": dx * PROJECTILE_SPEED,
+        "dy": dy * PROJECTILE_SPEED,
+        "lifetime": PROJECTILE_LIFETIME,
+        "color": YELLOW,
+        "radius": 5
+    }
+    projectiles.append(projectile)
+    
     # Zde by mohla být implementace střelby s efekty, projektily, atd.
     print(f"Střelba ze zbraně: {weapon_name}, poškození: {WEAPONS[weapon_name]['damage']}")
     
@@ -476,9 +497,10 @@ def change_weapon(direction):
 async def game_loop():
     global players, players_interpolated, players_prev, connected, status
     global x, y, player_x, player_y, my_id, response_time, last_update_time, is_moving
-    global player_angle, current_weapon, weapon_cooldowns
+    global player_angle, current_weapon, weapon_cooldowns, projectiles
 
-    # Připojení k serveru
+    shoot_this_frame = False  # Příznak pro odeslání projektilu
+
     try:
         async with aiohttp.ClientSession() as session:
             async with session.ws_connect(SERVER_URL) as ws:
@@ -486,101 +508,116 @@ async def game_loop():
                 status = "Připojeno"
                 print("Připojeno k serveru")
 
-                # Počáteční odeslání pozice pro registraci
                 await ws.send_json({"x": x, "y": y})
                 last_update_time = time.time()
 
-                # Hlavní herní smyčka
                 running = True
                 while running:
                     current_time = time.time()
+                    shoot_this_frame = False
 
-                    # Zpracování událostí
                     for event in pygame.event.get():
                         if event.type == pygame.QUIT or (event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE):
                             running = False
                         elif event.type == pygame.KEYDOWN and event.key == pygame.K_t:
-                            player_tile_x, player_tile_y = get_player_tile_position()
-                            add_image("images/tree1.png", player_tile_x + 2, player_tile_y + 2, 2.0)
+                            tile_x, tile_y = get_player_tile_position()
+                            add_image("images/tree1.png", tile_x + 2, tile_y + 2, 2.0)
                         elif event.type == pygame.MOUSEBUTTONDOWN:
-                            # Levé tlačítko myši pro střelbu
                             if event.button == 1:
-                                shoot(current_weapon)
-                            # Kolečko myši pro změnu zbraně
-                            elif event.button == 4:  # Scroll nahoru
+                                if shoot(current_weapon):
+                                    shoot_this_frame = True
+                            elif event.button == 4:
                                 change_weapon(1)
-                            elif event.button == 5:  # Scroll dolů
+                            elif event.button == 5:
                                 change_weapon(-1)
 
-                    # Zpracování vstupů
                     keys = pygame.key.get_pressed()
-                    dx, dy = 0, 0
-
+                    dx = dy = 0
                     if keys[pygame.K_w] or keys[pygame.K_UP]: dy -= PLAYER_SPEED
                     if keys[pygame.K_s] or keys[pygame.K_DOWN]: dy += PLAYER_SPEED
                     if keys[pygame.K_a] or keys[pygame.K_LEFT]: dx -= PLAYER_SPEED
                     if keys[pygame.K_d] or keys[pygame.K_RIGHT]: dx += PLAYER_SPEED
-
-                    # Diagonální pohyb normalizujeme
-                    if dx != 0 and dy != 0:
+                    if dx and dy:
                         dx *= 0.7071
                         dy *= 0.7071
 
-                    # Aktualizace stavu pohybu
-                    moved = (dx != 0 or dy != 0)
-                    is_moving = moved
-
-                    # Provedení pohybu
-                    if moved:
+                    is_moving = dx != 0 or dy != 0
+                    if is_moving:
                         move_player(dx, dy)
                     
                         check_medkit_collision(player_x, player_y, player_radius)
 
-                    # Výpočet úhlu mezi hráčem a kurzorem myši
-                    player_screen_x = int(SCREEN_WIDTH // 2)
-                    player_screen_y = int(SCREEN_HEIGHT // 2)
-                    player_angle = calculate_angle_to_mouse(player_screen_x, player_screen_y)
-                    
-                    # Aktualizace cooldownů zbraní
+                    player_angle = calculate_angle_to_mouse(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2)
+
                     for weapon in weapon_cooldowns:
                         if weapon_cooldowns[weapon] > 0:
                             weapon_cooldowns[weapon] -= 1
 
-                    # Posílání dat serveru (při pohybu nebo po uplynutí intervalu)
-                    if moved or current_time - last_update_time >= UPDATE_INTERVAL:
+                    # Aktualizace projektilů
+                    for p in list(projectiles):
+                        p["x"] += p["dx"]
+                        p["y"] += p["dy"]
+                        p["lifetime"] -= 1
+                        if p["lifetime"] <= 0:
+                            projectiles.remove(p)
+
+                    # Posílání pozice a případně projektilu
+                    if is_moving or shoot_this_frame or current_time - last_update_time >= UPDATE_INTERVAL:
                         start_time = time.time()
-                        await ws.send_json({"x": x, "y": y})
+                        message = {"x": x, "y": y}
+
+                        if shoot_this_frame and len(projectiles) > 0:
+                            last = projectiles[-1]
+                            message["projectile"] = {
+                                "x": last["x"],
+                                "y": last["y"],
+                                "dx": last["dx"],
+                                "dy": last["dy"],
+                                "color": list(last["color"])
+                            }
+
+                        await ws.send_json(message)
                         last_update_time = current_time
-                    
-                    # Přijímání dat od serveru (non-blocking)
+                        shoot_this_frame = False
+
+                    # Příjem dat ze serveru
                     try:
                         msg = await asyncio.wait_for(ws.receive(), 0.01)
                         if msg.type == aiohttp.WSMsgType.TEXT:
-                            # Uložíme předchozí pozice hráčů pro interpolaci
-                            players_prev = players_interpolated.copy() if players_interpolated else {}
-                            
-                            # Aktualizujeme data ze serveru
                             data = json.loads(msg.data)
+
+                            # Zpracování broadcastu projektilu od jiných hráčů
+                            if "projectile_broadcast" in data:
+                                p = data["projectile_broadcast"]
+                                projectile = {
+                                    "x": p["x"],
+                                    "y": p["y"],
+                                    "dx": p["dx"],
+                                    "dy": p["dy"],
+                                    "lifetime": PROJECTILE_LIFETIME,
+                                    "color": tuple(p["color"]),
+                                    "radius": 6
+                                }
+                                projectiles.append(projectile)
+                                continue
+
+                            # Zpracování pozic hráčů
+                            players_prev = players_interpolated.copy() if players_interpolated else {}
                             players = data
 
-                            # Měření odezvy serveru
-                            if moved:
-                                response_time = (time.time() - start_time) * 1000  # ms
+                            if is_moving:
+                                response_time = (time.time() - start_time) * 1000
 
-                            # Zjištění našeho ID při prvním příjmu dat
                             if my_id is None:
                                 for pid, pos in players.items():
-                                    if isinstance(pos, list) or isinstance(pos, tuple):
-                                        if abs(pos[0] - x) < 15 and abs(pos[1] - y) < 15:
-                                            my_id = pid
-                                            print(f"Moje ID: {my_id}")
-                                            break
-                                
-                            # Aktualizace našeho hráče v datech (lokální přepsání)
+                                    if isinstance(pos, list) and abs(pos[0] - x) < 15 and abs(pos[1] - y) < 15:
+                                        my_id = pid
+                                        print(f"Moje ID: {my_id}")
+                                        break
+
                             if my_id:
                                 players[my_id] = [x, y]
-                                
-                            # Inicializujeme interpolované pozice, pokud ještě nemáme předchozí data
+
                             if not players_prev:
                                 players_prev = players.copy()
                                 players_interpolated = players.copy()
@@ -590,34 +627,25 @@ async def game_loop():
                             status = "Spojení ukončeno"
                             break
                     except asyncio.TimeoutError:
-                        # Timeout je očekávaný, pokračujeme ve hře
                         pass
-                    
-                    # Aktualizace stavu
-                    if is_moving:
-                        status = "Připojeno (pohyb)"
-                    else:
-                        status = "Připojeno (stabilní)"
-                    
-                    # Interpolace pozic ostatních hráčů
+
+                    status = "Připojeno (pohyb)" if is_moving else "Připojeno (stabilní)"
+
+                    # Interpolace
                     players_interpolated = {}
                     for player_id, pos in players.items():
-                        if isinstance(pos, list) or isinstance(pos, tuple):
+                        if isinstance(pos, list):
                             if player_id == my_id:
-                                # Pro našeho hráče používáme přesně lokální pozici
                                 players_interpolated[player_id] = [x, y]
-                            elif player_id in players_prev and isinstance(players_prev[player_id], (list, tuple)):
-                                # Pro ostatní hráče interpolace pro plynulý pohyb
+                            elif player_id in players_prev:
                                 prev_x, prev_y = players_prev[player_id]
                                 new_x, new_y = pos
-                                interpolated_x = prev_x + (new_x - prev_x) * other_players_interpolation_factor
-                                interpolated_y = prev_y + (new_y - prev_y) * other_players_interpolation_factor
-                                players_interpolated[player_id] = [interpolated_x, interpolated_y]
+                                interp_x = prev_x + (new_x - prev_x) * other_players_interpolation_factor
+                                interp_y = prev_y + (new_y - prev_y) * other_players_interpolation_factor
+                                players_interpolated[player_id] = [interp_x, interp_y]
                             else:
-                                # Pokud nemáme předchozí pozici, použijeme aktuální
                                 players_interpolated[player_id] = pos
 
-                    # Vykreslení
                     draw_map(screen, player_x, player_y)
                     draw_player(screen, player_x, player_y)
                     draw_other_players(screen, player_x, player_y)
@@ -627,17 +655,21 @@ async def game_loop():
                         medkit_inst.draw(screen, player_x, player_y)
                     
                     # Vykreslení UI
+
+                    # Projektily
+                    for p in projectiles:
+                        screen_x = int(p["x"] - player_x + SCREEN_WIDTH // 2)
+                        screen_y = int(p["y"] - player_y + SCREEN_HEIGHT // 2)
+                        pygame.draw.circle(screen, p["color"], (screen_x, screen_y), p["radius"])
+
                     draw_ui(screen, font)
-                    
-                    # FPS počítadlo
+
                     fps = clock.get_fps()
                     fps_text = font.render(f"FPS: {fps:.1f}", True, YELLOW)
                     screen.blit(fps_text, (600, 10))
 
                     pygame.display.flip()
                     clock.tick(60)
-                    
-                    # Přidání malého zpoždění pro asyncio
                     await asyncio.sleep(0)
 
     except aiohttp.ClientError as e:
