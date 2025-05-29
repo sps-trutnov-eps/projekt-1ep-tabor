@@ -41,6 +41,7 @@ PLAYER_SIZE_MULTIPLIER = 2.5
 PLAYER_SPEED = 4
 
 # Weapons configuration
+# Weapons configuration
 WEAPONS = {
     "Crossbow": {
         "image": "Crossbow_Gun.png",
@@ -48,7 +49,11 @@ WEAPONS = {
         "offset_x": 20,
         "offset_y": 10,
         "damage": 25,
-        "cooldown": 30
+        "cooldown": 30,
+        "projectile_speed": 8,
+        "projectile_lifetime": 80,
+        "projectile_size": 4,
+        "projectile_color": (255, 255, 0)  # Yellow
     },
     "Rocket Launcher": {
         "image": "RocketLauncher_Gun.png",
@@ -56,7 +61,11 @@ WEAPONS = {
         "offset_x": 25,
         "offset_y": 15,
         "damage": 50,
-        "cooldown": 60
+        "cooldown": 60,
+        "projectile_speed": 6,
+        "projectile_lifetime": 100,
+        "projectile_size": 11,
+        "projectile_color": (255, 100, 0)  # Orange
     },
     "Shotgun": {
         "image": "Shotgun_Gun.png",
@@ -64,7 +73,11 @@ WEAPONS = {
         "offset_x": 20,
         "offset_y": 10,
         "damage": 35,
-        "cooldown": 45
+        "cooldown": 45,
+        "projectile_speed": 12,
+        "projectile_lifetime": 40,
+        "projectile_size": 6,
+        "projectile_color": (255, 255, 255)  # White
     },
     "Sniper": {
         "image": "Sniper_Gun.png",
@@ -72,7 +85,11 @@ WEAPONS = {
         "offset_x": 30,
         "offset_y": 10,
         "damage": 75,
-        "cooldown": 90
+        "cooldown": 90,
+        "projectile_speed": 15,
+        "projectile_lifetime": 120,
+        "projectile_size": 3,
+        "projectile_color": (0, 255, 255)  # Cyan
     }
 }
 
@@ -403,6 +420,9 @@ def shoot(weapon_name):
     # Nastavení cooldownu zbraně
     weapon_cooldowns[weapon_name] = WEAPONS[weapon_name]["cooldown"]
     
+    # Získání vlastností zbraně
+    weapon_info = WEAPONS[weapon_name]
+    
     # Vytvoření projektilu
     angle_rad = math.radians(player_angle - 90)
     dx = math.cos(angle_rad)
@@ -411,16 +431,16 @@ def shoot(weapon_name):
     projectile = {
         "x": player_x,
         "y": player_y,
-        "dx": dx * PROJECTILE_SPEED,
-        "dy": dy * PROJECTILE_SPEED,
-        "lifetime": PROJECTILE_LIFETIME,
-        "color": YELLOW,
-        "radius": 5
+        "dx": dx * weapon_info["projectile_speed"],
+        "dy": dy * weapon_info["projectile_speed"],
+        "lifetime": weapon_info["projectile_lifetime"],
+        "color": weapon_info["projectile_color"],
+        "radius": weapon_info["projectile_size"]
     }
     projectiles.append(projectile)
     
     # Zde by mohla být implementace střelby s efekty, projektily, atd.
-    print(f"Střelba ze zbraně: {weapon_name}, poškození: {WEAPONS[weapon_name]['damage']}")
+    print(f"Střelba ze zbraně: {weapon_name}, poškození: {weapon_info['damage']}")
     
     return True
 
@@ -510,7 +530,9 @@ async def game_loop():
                                 "y": last["y"],
                                 "dx": last["dx"],
                                 "dy": last["dy"],
-                                "color": list(last["color"])
+                                "color": list(last["color"]),
+                                "lifetime": last["lifetime"],
+                                "radius": last["radius"]
                             }
 
                         await ws.send_json(message)
@@ -531,9 +553,9 @@ async def game_loop():
                                     "y": p["y"],
                                     "dx": p["dx"],
                                     "dy": p["dy"],
-                                    "lifetime": PROJECTILE_LIFETIME,
+                                    "lifetime": p.get("lifetime", 80),  
                                     "color": tuple(p["color"]),
-                                    "radius": 6
+                                    "radius": p.get("radius", 6) 
                                 }
                                 projectiles.append(projectile)
                                 continue
