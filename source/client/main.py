@@ -7,7 +7,7 @@ import time
 import sys
 import os
 import math
-from medkit import Medkit
+from items.medkit import *
 
 # Pro server hostovaný na Render.com použij:
 SERVER_URL = "wss://projekt-1ep-tabor.onrender.com/ws"
@@ -425,39 +425,10 @@ def shoot(weapon_name):
     print(f"Střelba ze zbraně: {weapon_name}, poškození: {WEAPONS[weapon_name]['damage']}")
     
     return True
-
-# Funkce pro kontrolu kolize hráče s medkitem
-def check_medkit_collision(player_x, player_y, player_radius):
-    player_rect = pygame.Rect(player_x - player_radius, player_y - player_radius, 
-                             player_radius * 2, player_radius * 2)
-    
-    for medkit in medkits:
-        if player_rect.colliderect(medkit.get_rect()):
-            # Přidání zdraví (zde byste přidali kód pro zvýšení zdraví hráče)
-            print("+10 životů")
-            
-            # Přesunutí medkitu na novou náhodnou pozici
-            # Použijeme dlaždice pro lepší umístění (mimo zdi a objekty)
-            new_tile_x = random.randint(BOUNDARY_WIDTH + 2, MAP_WIDTH - BOUNDARY_WIDTH - 2)
-            new_tile_y = random.randint(BOUNDARY_WIDTH + 2, MAP_HEIGHT - BOUNDARY_WIDTH - 2)
-            
-            # Převedení pozice dlaždice na pozici v herním světě
-            medkit.x = new_tile_x * TILE_SIZE + TILE_SIZE // 2
-            medkit.y = new_tile_y * TILE_SIZE + TILE_SIZE // 2
-            
-            return True
-    return False
     
 # Nastavení itemů
 medkits = []
-for _ in range(medkit_amount):  # Vytvoří 5 medkitů rozptýlených po mapě
-    tile_x = random.randint(BOUNDARY_WIDTH + 2, MAP_WIDTH - BOUNDARY_WIDTH - 2)
-    tile_y = random.randint(BOUNDARY_WIDTH + 2, MAP_HEIGHT - BOUNDARY_WIDTH - 2)
-    
-    medkit_x = tile_x * TILE_SIZE + TILE_SIZE // 2
-    medkit_y = tile_y * TILE_SIZE + TILE_SIZE // 2
-    
-    medkits.append(Medkit(medkit_x, medkit_y, size=80))
+generate_medkits(medkit_amount, TILE_SIZE, MAP_WIDTH, MAP_HEIGHT, BOUNDARY_WIDTH, medkits=medkits)
 
 # Funkce pro změnu zbraně
 def change_weapon(direction):
@@ -518,8 +489,9 @@ async def game_loop():
                     is_moving = dx != 0 or dy != 0
                     if is_moving:
                         move_player(dx, dy)
-                    
-                        check_medkit_collision(player_x, player_y, player_radius)
+
+                        # Kontrola kolizí
+                        check_medkit_collision(player_x, player_y, player_radius, TILE_SIZE, MAP_WIDTH, MAP_HEIGHT, BOUNDARY_WIDTH, medkits=medkits)
 
                     player_angle = calculate_angle_to_mouse(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2)
 
@@ -626,9 +598,7 @@ async def game_loop():
                     
                     # Vykreslení itemů
                     for medkit_inst in medkits:
-                        medkit_inst.draw(screen, player_x, player_y)
-                    
-                    # Vykreslení UI
+                        medkit_inst.draw(screen, player_x, player_y, SCREEN_WIDTH, SCREEN_HEIGHT)
 
                     # Projektily
                     for p in projectiles:
@@ -636,6 +606,7 @@ async def game_loop():
                         screen_y = int(p["y"] - player_y + SCREEN_HEIGHT // 2)
                         pygame.draw.circle(screen, p["color"], (screen_x, screen_y), p["radius"])
 
+                    # Vykreslení UI
                     draw_ui(screen, font)
 
                     fps = clock.get_fps()
