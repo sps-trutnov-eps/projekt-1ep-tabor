@@ -7,6 +7,7 @@ import time
 import sys
 import os
 import math
+from items.medkit import *
 
 # Pro server hostovaný na Render.com použij:
 SERVER_URL = "wss://projekt-1ep-tabor.onrender.com/ws"
@@ -114,6 +115,7 @@ current_weapon_index = 0
 weapon_names = list(WEAPONS.keys())
 current_weapon = weapon_names[current_weapon_index]
 weapon_cooldowns = {name: 0 for name in WEAPONS}
+medkit_amount = 5 # celkový počet medkitů na mapě
 
 # Inicializace hráče
 x = random.randint(50, SCREEN_WIDTH-50)  # Inicializace pro klienta
@@ -443,6 +445,10 @@ def shoot(weapon_name):
     print(f"Střelba ze zbraně: {weapon_name}, poškození: {weapon_info['damage']}")
     
     return True
+    
+# Nastavení itemů
+medkits = []
+generate_medkits(medkit_amount, TILE_SIZE, MAP_WIDTH, MAP_HEIGHT, BOUNDARY_WIDTH, medkits=medkits)
 
 # Funkce pro změnu zbraně
 def change_weapon(direction):
@@ -503,6 +509,9 @@ async def game_loop():
                     is_moving = dx != 0 or dy != 0
                     if is_moving:
                         move_player(dx, dy)
+
+                        # Kontrola kolizí
+                        check_medkit_collision(player_x, player_y, player_radius, TILE_SIZE, MAP_WIDTH, MAP_HEIGHT, BOUNDARY_WIDTH, medkits=medkits)
 
                     player_angle = calculate_angle_to_mouse(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2)
 
@@ -608,6 +617,10 @@ async def game_loop():
                     draw_map(screen, player_x, player_y)
                     draw_player(screen, player_x, player_y)
                     draw_other_players(screen, player_x, player_y)
+                    
+                    # Vykreslení itemů
+                    for medkit_inst in medkits:
+                        medkit_inst.draw(screen, player_x, player_y, SCREEN_WIDTH, SCREEN_HEIGHT)
 
                     # Projektily
                     for p in projectiles:
@@ -615,6 +628,7 @@ async def game_loop():
                         screen_y = int(p["y"] - player_y + SCREEN_HEIGHT // 2)
                         pygame.draw.circle(screen, p["color"], (screen_x, screen_y), p["radius"])
 
+                    # Vykreslení UI
                     draw_ui(screen, font)
 
                     fps = clock.get_fps()
