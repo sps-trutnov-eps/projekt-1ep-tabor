@@ -13,7 +13,7 @@ from scooter import Scooter
 SERVER_URL = "wss://projekt-1ep-tabor.onrender.com/ws"
 # Pro lokální server použij:
 # SERVER_URL = "ws://localhost:5555/ws"
-
+#nefunkční
 # Inicializace Pygame
 pygame.init()
 info = pygame.display.Info()
