@@ -22,6 +22,9 @@ screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
 pygame.display.set_caption("Multiplayer CTF Game")
 font = pygame.font.SysFont(None, 24)
 clock = pygame.time.Clock()
+flag_taken = False
+flag_px = 600
+flag_py = 3300
 
 # Barvy
 BLACK = (0, 0, 0)
@@ -253,6 +256,40 @@ def vypocitej_tmavost_hranice(x, y):
         return (0, g_hodnota, 0)
     else:
         return DARKER_GREEN
+    
+
+
+def draw_flag(screen, camera_x, camera_y, time_elapsed):
+    if flag_taken:
+        return
+    
+    # Výpočet pozice na obrazovce
+    screen_x = int(flag_px - camera_x + SCREEN_WIDTH // 2)
+    screen_y = int(flag_py - camera_y + SCREEN_HEIGHT // 2)
+    
+    # Zvětšené parametry vlajky
+    scale = 2.0  # <- Zmenšit podle potřeby (1.5 = 150 %, 2.0 = 200 % atd.)
+    flag_height = int(30 * scale)
+    pole_radius = int(10 * scale)
+    flag_length = int(40 * scale)
+    wave_offset = 5 * math.sin(time_elapsed * 2) * scale
+    
+    # Výpočet bodů trojúhelníkové vlajky
+    flag_points = [
+        (screen_x, screen_y - 5),  # Bod u tyče
+        (screen_x + flag_length, screen_y - 15 - wave_offset),
+        (screen_x, screen_y - flag_height - 3 * math.sin(time_elapsed * 2) * scale)
+    ]
+    
+    # Tyč (kruh + čára)
+    pygame.draw.circle(screen, (220, 50, 50), (screen_x, screen_y), pole_radius)
+    pygame.draw.line(screen, BLACK, (screen_x, screen_y), (screen_x, screen_y - flag_height - 10))
+    
+    # Vlajka
+    pygame.draw.polygon(screen, (220, 50, 50), flag_points)
+    pygame.draw.polygon(screen, BLACK, flag_points, 2)    
+
+
 
 # Funkce pro vykreslení mapy
 def draw_map(screen, camera_x, camera_y):
@@ -666,6 +703,7 @@ async def game_loop():
                                 players_interpolated[player_id] = pdata
 
                     draw_map(screen, player_x, player_y)
+                    draw_flag(screen, player_x, player_y, pygame.time.get_ticks() / 1000.0)
                     draw_player(screen, player_x, player_y)
                     draw_other_players(screen, player_x, player_y)
                     
