@@ -8,6 +8,7 @@ import sys
 import os
 import math
 from items.medkit import *
+from items.grenade import *
 
 # Pro server hostovaný na Render.com použij:
 SERVER_URL = "wss://projekt-1ep-tabor.onrender.com/ws"
@@ -116,6 +117,7 @@ weapon_names = list(WEAPONS.keys())
 current_weapon = weapon_names[current_weapon_index]
 weapon_cooldowns = {name: 0 for name in WEAPONS}
 medkit_amount = 5 # celkový počet medkitů na mapě
+grenade_amount = 5 # celkový počet beden s granáty na mapě
 
 # Inicializace hráče
 x = random.randint(50, SCREEN_WIDTH-50)  # Inicializace pro klienta
@@ -130,6 +132,8 @@ player_health = 100
 max_player_health = 100
 player_alive = True
 players_health = {}
+player_grenades_amount = 10
+player_last_grenade_time = 0
 
 # Generuj náhodnou barvu pro rozlišení různých instancí na stejném počítači
 r = random.randint(100, 255)
@@ -364,12 +368,6 @@ def draw_player(screen, offset_x, offset_y):
         # Záloha - kruh pro případ, že by textura nebyla k dispozici
         color = RED if player_team == 2 else BLUE
         pygame.draw.circle(screen, color, (screen_x, screen_y), player_radius)
-    
-    if player_health < 30:
-        damage_overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
-        alpha = int(255 * (1 - player_health / 30))
-        damage_overlay.fill((255, 0, 0, alpha))
-        screen.blit(damage_overlay, (0,0))
 
 # Funkce pro vykreslení ostatních hráčů z multiplayer
 def draw_other_players(screen, camera_x, camera_y):
@@ -410,6 +408,14 @@ def draw_other_players(screen, camera_x, camera_y):
 
 # Funkce pro vykreslení UI
 def draw_ui(screen, font):
+    # Obrazovka při nízkém zdraví
+    if player_health < 30:
+        damage_overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+        alpha = int(255 * (1 - player_health / 30))
+        damage_overlay.fill((255, 0, 0, alpha))
+        screen.blit(damage_overlay, (0,0))
+
+    # Rozměry health baru
     health_bar_width = 200
     health_bar_height = 20
     health_bar_x = SCREEN_WIDTH / 2 - health_bar_width / 2
@@ -431,10 +437,24 @@ def draw_ui(screen, font):
     # Text se zdravím
     health_text = font.render(f"HP: {player_health}/{max_player_health}", True, WHITE)
     screen.blit(health_text, (health_bar_x, health_bar_y + health_bar_height + 5))
+
+    # Cooldown pro granát
+    current_time = time.time()
+    grenade_cooldown = max(0, 30 - int(current_time * 10 - player_last_grenade_time * 10))
+    grenade_cooldown = round(grenade_cooldown / 10, 1)
+
+    # Text s granáty
+    grenades_txt = font.render(f"Grenades: {player_grenades_amount}", True, (255, 255, 255))
+    grenades_cd = font.render(f"{grenade_cooldown}s", True, (255, 255, 255))
     
     # Vykreslení zbraně v levém dolním rohu
     weapon_info_bg = pygame.Rect(10, SCREEN_HEIGHT - 60, 300, 50)
     pygame.draw.rect(screen, (0, 0, 0, 128), weapon_info_bg)
+
+    # Vykreslení granátů
+    screen.blit(grenades_txt, (200, SCREEN_HEIGHT - 50))
+    if grenade_cooldown > 0:
+        screen.blit(grenades_cd, (SCREEN_WIDTH // 2 - grenades_cd.get_width() // 2, SCREEN_HEIGHT // 2 - 100))
     
     # Zobrazení jména zbraně
     weapon_text = font.render(f"Weapon: {current_weapon}", True, WHITE)
@@ -526,6 +546,11 @@ def shoot(weapon_name):
 medkits = []
 generate_medkits(medkit_amount, TILE_SIZE, MAP_WIDTH, MAP_HEIGHT, BOUNDARY_WIDTH, medkits=medkits)
 
+grenades = []
+generate_grenades(grenade_amount, TILE_SIZE, MAP_WIDTH, MAP_HEIGHT, BOUNDARY_WIDTH, grenades=grenades)
+
+thrown_grenades = []
+
 # Funkce pro změnu zbraně
 def change_weapon(direction):
     global current_weapon_index, current_weapon
@@ -552,6 +577,10 @@ def heal_player(amount):
     old_health = player_health
     player_health = min(max_player_health, player_health + amount)
 
+def add_grenades(amount):
+    global player_grenades_amount
+    player_grenades_amount += amount
+
 def respawn_player():
     global player_health, player_alive, player_x, player_y
     print("Respawn funkce byla zavolána!")
@@ -567,6 +596,7 @@ async def game_loop():
     global players, players_interpolated, players_prev, connected, status
     global x, y, player_x, player_y, my_id, response_time, last_update_time, is_moving
     global player_angle, current_weapon, weapon_cooldowns, projectiles
+    global player_last_grenade_time, player_grenades_amount
 
     shoot_this_frame = False  # Příznak pro odeslání projektilu
 
@@ -601,7 +631,7 @@ async def game_loop():
                                 change_weapon(1)
                             elif event.button == 5:
                                 change_weapon(-1)
-                                
+
                     if player_alive:
                         keys = pygame.key.get_pressed()
                         dx = dy = 0
@@ -613,12 +643,32 @@ async def game_loop():
                             dx *= 0.7071
                             dy *= 0.7071
 
+                        if keys[pygame.K_g] and player_grenades_amount > 0:
+                            if current_time - player_last_grenade_time >= 3:
+                                mouse_x, mouse_y = pygame.mouse.get_pos()
+                                world_mouse_x = mouse_x - SCREEN_WIDTH // 2 + player_x
+                                world_mouse_y = mouse_y - SCREEN_HEIGHT // 2 + player_y
+                                grenade_dx = world_mouse_x - player_x
+                                grenade_dy = world_mouse_y - player_y
+                                grenade_distance = math.sqrt(grenade_dx ** 2 + grenade_dy ** 2)
+                                if grenade_distance != 0:
+                                    speed = 8  # síla hodu granátu
+                                    grenade_velocity_x = speed * (grenade_dx / grenade_distance)
+                                    grenade_velocity_y = speed * (grenade_dy / grenade_distance)
+                                    thrown_grenade = throw_grenade(grenade_velocity_x, grenade_velocity_y, player_grenades_amount,
+                                                                    player_x, player_y, player_size)
+                                    if thrown_grenade:
+                                        thrown_grenades.append(thrown_grenade)
+                                        add_grenades(-1)
+                                        player_last_grenade_time = current_time
+
                     is_moving = dx != 0 or dy != 0
                     if is_moving:
                         move_player(dx, dy)
 
                         # Kontrola kolizí
                         check_medkit_collision(player_x, player_y, player_radius, TILE_SIZE, MAP_WIDTH, MAP_HEIGHT, BOUNDARY_WIDTH, heal_player, medkits=medkits)
+                        check_grenade_collision(player_x, player_y, player_radius, TILE_SIZE, MAP_WIDTH, MAP_HEIGHT, BOUNDARY_WIDTH, add_grenades, grenades=grenades)
 
                     player_angle = calculate_angle_to_mouse(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2)
 
@@ -643,7 +693,11 @@ async def game_loop():
                             "angle": player_angle,
                             "weapon": current_weapon,
                             "health": player_health,
-                            "alive": player_alive
+                            "alive": player_alive,
+                            "grenades": {
+                                "amount": player_grenades_amount,
+                                "last_used": player_last_grenade_time
+                                }
                             }
                         if shoot_this_frame and len(projectiles) > 0:
                             last = projectiles[-1]
@@ -676,9 +730,9 @@ async def game_loop():
                                     "y": p["y"],
                                     "dx": p["dx"],
                                     "dy": p["dy"],
-                                    "lifetime": p.get("lifetime", 80),  
+                                    "lifetime": p.get("lifetime", 80),
                                     "color": tuple(p["color"]),
-                                    "radius": p.get("radius", 6) 
+                                    "radius": p.get("radius", 6)
                                 }
                                 projectiles.append(projectile)
                                 continue
@@ -739,12 +793,21 @@ async def game_loop():
                     draw_map(screen, player_x, player_y)
                     draw_player(screen, player_x, player_y)
                     draw_other_players(screen, player_x, player_y)
-                    
+
                     if keys[pygame.K_SPACE]: take_damage(5)
-                    
+
                     # Vykreslení itemů
                     for medkit_inst in medkits:
                         medkit_inst.draw(screen, player_x, player_y, SCREEN_WIDTH, SCREEN_HEIGHT)
+
+                    for grenade_inst in grenades:
+                        grenade_inst.draw(screen, player_x, player_y, SCREEN_WIDTH, SCREEN_HEIGHT)
+
+                    for thrown_grenade in thrown_grenades:
+                        thrown_grenade.update(player_x, player_y, player_size, SCREEN_WIDTH, SCREEN_HEIGHT, take_damage)
+                        thrown_grenade.draw(screen, player_x, player_y, player_size, SCREEN_WIDTH, SCREEN_HEIGHT)
+                        if thrown_grenade.state == 'exploded' and pygame.time.get_ticks() - thrown_grenade.explosion_time > 500:
+                            thrown_grenades.remove(thrown_grenade)
 
                     # Projektily
                     for p in projectiles:
