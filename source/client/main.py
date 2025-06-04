@@ -7,6 +7,7 @@ import time
 import sys
 import os
 import math
+from items.medkit import *
 
 # Pro server hostovaný na Render.com použij:
 SERVER_URL = "wss://projekt-1ep-tabor.onrender.com/ws"
@@ -49,6 +50,7 @@ PLAYER_SIZE_MULTIPLIER = 2.5
 PLAYER_SPEED = 4
 
 # Weapons configuration
+# Weapons configuration
 WEAPONS = {
     "Crossbow": {
         "image": "Crossbow_Gun.png",
@@ -56,7 +58,11 @@ WEAPONS = {
         "offset_x": 20,
         "offset_y": 10,
         "damage": 25,
-        "cooldown": 30
+        "cooldown": 30,
+        "projectile_speed": 8,
+        "projectile_lifetime": 80,
+        "projectile_size": 4,
+        "projectile_color": (255, 255, 0)  # Yellow
     },
     "Rocket Launcher": {
         "image": "RocketLauncher_Gun.png",
@@ -64,7 +70,11 @@ WEAPONS = {
         "offset_x": 25,
         "offset_y": 15,
         "damage": 50,
-        "cooldown": 60
+        "cooldown": 60,
+        "projectile_speed": 6,
+        "projectile_lifetime": 100,
+        "projectile_size": 11,
+        "projectile_color": (255, 100, 0)  # Orange
     },
     "Shotgun": {
         "image": "Shotgun_Gun.png",
@@ -72,7 +82,11 @@ WEAPONS = {
         "offset_x": 20,
         "offset_y": 10,
         "damage": 35,
-        "cooldown": 45
+        "cooldown": 45,
+        "projectile_speed": 12,
+        "projectile_lifetime": 40,
+        "projectile_size": 6,
+        "projectile_color": (255, 255, 255)  # White
     },
     "Sniper": {
         "image": "Sniper_Gun.png",
@@ -80,7 +94,11 @@ WEAPONS = {
         "offset_x": 30,
         "offset_y": 10,
         "damage": 75,
-        "cooldown": 90
+        "cooldown": 90,
+        "projectile_speed": 15,
+        "projectile_lifetime": 120,
+        "projectile_size": 3,
+        "projectile_color": (0, 255, 255)  # Cyan
     }
 }
 
@@ -105,6 +123,7 @@ current_weapon_index = 0
 weapon_names = list(WEAPONS.keys())
 current_weapon = weapon_names[current_weapon_index]
 weapon_cooldowns = {name: 0 for name in WEAPONS}
+medkit_amount = 5 # celkový počet medkitů na mapě
 
 # Inicializace hráče
 player_x = MAP_WIDTH // 2 * TILE_SIZE + TILE_SIZE // 2  # Pro mapu
@@ -719,10 +738,36 @@ def shoot(weapon_name):
     # Nastavení cooldownu zbraně
     weapon_cooldowns[weapon_name] = WEAPONS[weapon_name]["cooldown"]
     
+<<<<<<< HEAD
+=======
+    # Získání vlastností zbraně
+    weapon_info = WEAPONS[weapon_name]
+    
+    # Vytvoření projektilu
+    angle_rad = math.radians(player_angle - 90)
+    dx = math.cos(angle_rad)
+    dy = math.sin(angle_rad)
+
+    projectile = {
+        "x": player_x,
+        "y": player_y,
+        "dx": dx * weapon_info["projectile_speed"],
+        "dy": dy * weapon_info["projectile_speed"],
+        "lifetime": weapon_info["projectile_lifetime"],
+        "color": weapon_info["projectile_color"],
+        "radius": weapon_info["projectile_size"]
+    }
+    projectiles.append(projectile)
+    
+>>>>>>> origin/main
     # Zde by mohla být implementace střelby s efekty, projektily, atd.
-    print(f"Střelba ze zbraně: {weapon_name}, poškození: {WEAPONS[weapon_name]['damage']}")
+    print(f"Střelba ze zbraně: {weapon_name}, poškození: {weapon_info['damage']}")
     
     return True
+    
+# Nastavení itemů
+medkits = []
+generate_medkits(medkit_amount, TILE_SIZE, MAP_WIDTH, MAP_HEIGHT, BOUNDARY_WIDTH, medkits=medkits)
 
 # Funkce pro změnu zbraně
 def change_weapon(direction):
@@ -811,12 +856,20 @@ async def game_loop():
                     # so player_prev_pos needs to be updated outside this conditional too.
                     # For now, it's handled inside move_player.
 
+<<<<<<< HEAD
                     # Výpočet úhlu mezi hráčem a kurzorem myši
                     player_screen_x = int(SCREEN_WIDTH // 2)
                     player_screen_y = int(SCREEN_HEIGHT // 2)
                     player_angle = calculate_angle_to_mouse(player_screen_x, player_screen_y)
                     
                     # Aktualizace cooldownů zbraní
+=======
+                        # Kontrola kolizí
+                        check_medkit_collision(player_x, player_y, player_radius, TILE_SIZE, MAP_WIDTH, MAP_HEIGHT, BOUNDARY_WIDTH, medkits=medkits)
+
+                    player_angle = calculate_angle_to_mouse(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2)
+
+>>>>>>> origin/main
                     for weapon in weapon_cooldowns:
                         if weapon_cooldowns[weapon] > 0:
                             weapon_cooldowns[weapon] -= 1
@@ -825,13 +878,52 @@ async def game_loop():
                     # Send player_x, player_y which are world coordinates
                     if moved or current_time - last_update_time >= UPDATE_INTERVAL:
                         start_time = time.time()
+<<<<<<< HEAD
                         await ws.send_json({"x": player_x, "y": player_y, "hidden": player_hidden}) # Send hidden state
+=======
+                        message = {"x": x, "y": y}
+
+                        if shoot_this_frame and len(projectiles) > 0:
+                            last = projectiles[-1]
+                            message["projectile"] = {
+                                "x": last["x"],
+                                "y": last["y"],
+                                "dx": last["dx"],
+                                "dy": last["dy"],
+                                "color": list(last["color"]),
+                                "lifetime": last["lifetime"],
+                                "radius": last["radius"]
+                            }
+
+                        await ws.send_json(message)
+>>>>>>> origin/main
                         last_update_time = current_time
                     
                     # Přijímání dat od serveru (non-blocking)
                     try:
                         msg = await asyncio.wait_for(ws.receive(), 0.01)
                         if msg.type == aiohttp.WSMsgType.TEXT:
+<<<<<<< HEAD
+=======
+                            data = json.loads(msg.data)
+
+                            # Zpracování broadcastu projektilu od jiných hráčů
+                            if "projectile_broadcast" in data:
+                                p = data["projectile_broadcast"]
+                                projectile = {
+                                    "x": p["x"],
+                                    "y": p["y"],
+                                    "dx": p["dx"],
+                                    "dy": p["dy"],
+                                    "lifetime": p.get("lifetime", 80),  
+                                    "color": tuple(p["color"]),
+                                    "radius": p.get("radius", 6) 
+                                }
+                                projectiles.append(projectile)
+                                continue
+
+                            # Zpracování pozic hráčů
+>>>>>>> origin/main
                             players_prev = players_interpolated.copy() if players_interpolated else {}
                             
                             data = json.loads(msg.data)
@@ -942,6 +1034,7 @@ async def game_loop():
                     draw_player(screen, player_x, player_y) # This function now handles player_hidden status
                     draw_other_players(screen, player_x, player_y)
                     
+<<<<<<< HEAD
                     # Draw prompts for bush interaction
                     # These also use 'player_near_bush' for consistency
                     if player_near_bush and not player_hidden:
@@ -953,6 +1046,18 @@ async def game_loop():
                     if show_bush_arrow:
                         draw_bush_arrow(screen, player_x, player_y, bush_pos[0], bush_pos[1], player_x, player_y)
 
+=======
+                    # Vykreslení itemů
+                    for medkit_inst in medkits:
+                        medkit_inst.draw(screen, player_x, player_y, SCREEN_WIDTH, SCREEN_HEIGHT)
+
+                    # Projektily
+                    for p in projectiles:
+                        screen_x = int(p["x"] - player_x + SCREEN_WIDTH // 2)
+                        screen_y = int(p["y"] - player_y + SCREEN_HEIGHT // 2)
+                        pygame.draw.circle(screen, p["color"], (screen_x, screen_y), p["radius"])
+
+>>>>>>> origin/main
                     # Vykreslení UI
                     draw_ui(screen, font)
                     
