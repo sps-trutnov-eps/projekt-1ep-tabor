@@ -362,17 +362,60 @@ def draw_player(screen, offset_x, offset_y):
 def draw_other_players(screen, camera_x, camera_y):
     for player_id, pos in players_interpolated.items():
         if isinstance(pos, list) or isinstance(pos, tuple):
-            if player_id != my_id:  # Kreslíme jen ostatní hráče
+            if player_id != my_id:
                 # Konverze souřadnic z relativních (0-800, 0-600) na mapové
                 map_x = (pos[0] / SCREEN_WIDTH) * (MAP_WIDTH * TILE_SIZE)
                 map_y = (pos[1] / SCREEN_HEIGHT) * (MAP_HEIGHT * TILE_SIZE)
-                
+
                 # Přepočet na obrazovku s kamerou
                 screen_x = int(map_x - camera_x + SCREEN_WIDTH // 2)
                 screen_y = int(map_y - camera_y + SCREEN_HEIGHT // 2)
-                
-                # Vykreslení ostatních hráčů
-                pygame.draw.rect(screen, GREEN, (screen_x - player_radius//2, screen_y - player_radius//2, player_radius, player_radius))
+
+                # --- Nové: vykreslení hráče jako obrázku s rotací a zbraní ---
+                # Zjisti úhel natočení (pokud je k dispozici)
+                angle = 0
+                if isinstance(players.get(player_id), dict) and 'angle' in players[player_id]:
+                    angle = players[player_id]['angle']
+                else:
+                    # Odhad úhlu podle pohybu (pokud není k dispozici)
+                    angle = 0
+
+                # Výběr textury hráče (červená/modrá podle týmu, pokud je info)
+                team = 2
+                if isinstance(players.get(player_id), dict) and 'team' in players[player_id]:
+                    team = players[player_id]['team']
+                texture_to_draw = player_texture
+                if team == 3:
+                    texture_to_draw = player_texture.copy()
+                    texture_to_draw.fill(BLUE, special_flags=pygame.BLEND_RGBA_MULT)
+
+                rotated_texture = pygame.transform.rotate(texture_to_draw, -angle)
+                rot_rect = rotated_texture.get_rect(center=(screen_x, screen_y))
+                screen.blit(rotated_texture, rot_rect.topleft)
+
+                # Vykreslení zbraně (pokud je info)
+                weapon_name = weapon_names[0]
+                if isinstance(players.get(player_id), dict) and 'weapon' in players[player_id]:
+                    weapon_name = players[player_id]['weapon']
+                if weapon_name in weapon_textures:
+                    weapon_info = WEAPONS[weapon_name]
+                    weapon_texture = weapon_textures[weapon_name]
+                    angle_rad = math.radians(angle - 90)
+                    offset_distance = weapon_info["offset_x"]
+                    weapon_offset_x = math.cos(angle_rad) * offset_distance
+                    weapon_offset_y = math.sin(angle_rad) * offset_distance
+                    weapon_x = screen_x + weapon_offset_x
+                    weapon_y = screen_y + weapon_offset_y
+                    rotated_weapon = pygame.transform.rotate(weapon_texture, -angle)
+                    weapon_rect = rotated_weapon.get_rect(center=(weapon_x, weapon_y))
+                    screen.blit(rotated_weapon, weapon_rect.topleft)
+
+    # --- Vykreslení projektilů ostatních hráčů ---
+    for p in projectiles:
+        # Projektily jsou již globální, vykreslují se pro všechny hráče
+        screen_x = int(p["x"] - camera_x + SCREEN_WIDTH // 2)
+        screen_y = int(p["y"] - camera_y + SCREEN_HEIGHT // 2)
+        pygame.draw.circle(screen, p["color"], (screen_x, screen_y), p["radius"])
 
 # Funkce pro vykreslení UI
 def draw_ui(screen, font):
@@ -547,8 +590,12 @@ async def game_loop():
                     # Posílání pozice a případně projektilu
                     if is_moving or shoot_this_frame or current_time - last_update_time >= UPDATE_INTERVAL:
                         start_time = time.time()
-                        message = {"x": x, "y": y}
-
+                        message = {
+                            "x": x,
+                            "y": y,
+                            "angle": player_angle,
+                            "weapon": current_weapon
+                        }
                         if shoot_this_frame and len(projectiles) > 0:
                             last = projectiles[-1]
                             message["projectile"] = {
@@ -560,7 +607,6 @@ async def game_loop():
                                 "lifetime": last["lifetime"],
                                 "radius": last["radius"]
                             }
-
                         await ws.send_json(message)
                         last_update_time = current_time
                         shoot_this_frame = False
@@ -570,7 +616,6 @@ async def game_loop():
                         msg = await asyncio.wait_for(ws.receive(), 0.01)
                         if msg.type == aiohttp.WSMsgType.TEXT:
                             data = json.loads(msg.data)
-
                             # Zpracování broadcastu projektilu od jiných hráčů
                             if "projectile_broadcast" in data:
                                 p = data["projectile_broadcast"]
@@ -585,28 +630,27 @@ async def game_loop():
                                 }
                                 projectiles.append(projectile)
                                 continue
-
                             # Zpracování pozic hráčů
                             players_prev = players_interpolated.copy() if players_interpolated else {}
                             players = data
-
                             if is_moving:
                                 response_time = (time.time() - start_time) * 1000
-
                             if my_id is None:
-                                for pid, pos in players.items():
-                                    if isinstance(pos, list) and abs(pos[0] - x) < 15 and abs(pos[1] - y) < 15:
+                                for pid, pdata in players.items():
+                                    if isinstance(pdata, dict) and abs(pdata["x"] - x) < 15 and abs(pdata["y"] - y) < 15:
                                         my_id = pid
                                         print(f"Moje ID: {my_id}")
                                         break
-
                             if my_id:
-                                players[my_id] = [x, y]
-
+                                players[my_id] = {
+                                    "x": x,
+                                    "y": y,
+                                    "angle": player_angle,
+                                    "weapon": current_weapon
+                                }
                             if not players_prev:
                                 players_prev = players.copy()
                                 players_interpolated = players.copy()
-
                         elif msg.type in (aiohttp.WSMsgType.CLOSED, aiohttp.WSMsgType.ERROR):
                             connected = False
                             status = "Spojení ukončeno"
@@ -618,18 +662,27 @@ async def game_loop():
 
                     # Interpolace
                     players_interpolated = {}
-                    for player_id, pos in players.items():
-                        if isinstance(pos, list):
+                    for player_id, pdata in players.items():
+                        if isinstance(pdata, dict):
                             if player_id == my_id:
-                                players_interpolated[player_id] = [x, y]
+                                players_interpolated[player_id] = {
+                                    "x": x,
+                                    "y": y,
+                                    "angle": player_angle,
+                                    "weapon": current_weapon
+                                }
                             elif player_id in players_prev:
-                                prev_x, prev_y = players_prev[player_id]
-                                new_x, new_y = pos
-                                interp_x = prev_x + (new_x - prev_x) * other_players_interpolation_factor
-                                interp_y = prev_y + (new_y - prev_y) * other_players_interpolation_factor
-                                players_interpolated[player_id] = [interp_x, interp_y]
+                                prev = players_prev[player_id]
+                                interp_x = prev["x"] + (pdata["x"] - prev["x"]) * other_players_interpolation_factor
+                                interp_y = prev["y"] + (pdata["y"] - prev["y"]) * other_players_interpolation_factor
+                                players_interpolated[player_id] = {
+                                    "x": interp_x,
+                                    "y": interp_y,
+                                    "angle": pdata.get("angle", 0),
+                                    "weapon": pdata.get("weapon", weapon_names[0])
+                                }
                             else:
-                                players_interpolated[player_id] = pos
+                                players_interpolated[player_id] = pdata
 
                     draw_map(screen, player_x, player_y)
                     draw_player(screen, player_x, player_y)
