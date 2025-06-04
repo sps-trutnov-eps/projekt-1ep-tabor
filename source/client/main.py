@@ -129,6 +129,10 @@ player_team = 2  # 2 = tým A, 3 = tým B
 player_size = int(TILE_SIZE * PLAYER_SIZE_MULTIPLIER)
 player_radius = player_size // 2
 player_angle = 0  # Úhel natočení hráče (ve stupních)
+player_health = 100
+max_player_health = 100
+player_alive = True
+players_health = {}
 
 # Generuj náhodnou barvu pro rozlišení různých instancí na stejném počítači
 r = random.randint(100, 255)
@@ -345,6 +349,9 @@ def draw_map(screen, camera_x, camera_y):
 
 # Funkce pro vykreslení hráče a zbraně
 def draw_player(screen, offset_x, offset_y):
+    if not player_alive:
+        return
+    
     screen_x = int(player_x - offset_x + SCREEN_WIDTH // 2)
     screen_y = int(player_y - offset_y + SCREEN_HEIGHT // 2)
    
@@ -394,6 +401,12 @@ def draw_player(screen, offset_x, offset_y):
         # Záloha - kruh pro případ, že by textura nebyla k dispozici
         color = RED if player_team == 2 else BLUE
         pygame.draw.circle(screen, color, (screen_x, screen_y), player_radius)
+    
+    if player_health < 30:
+        damage_overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+        alpha = int(255 * (1 - player_health / 30))
+        damage_overlay.fill((255, 0, 0, alpha))
+        screen.blit(damage_overlay, (0,0))
 
 # Funkce pro vykreslení ostatních hráčů z multiplayer
 def draw_other_players(screen, camera_x, camera_y):
@@ -434,6 +447,28 @@ def draw_other_players(screen, camera_x, camera_y):
 
 # Funkce pro vykreslení UI
 def draw_ui(screen, font):
+    health_bar_width = 200
+    health_bar_height = 20
+    health_bar_x = SCREEN_WIDTH / 2 - health_bar_width / 2
+    health_bar_y = 20
+    
+    # Pozadí health baru
+    pygame.draw.rect(screen, RED, (health_bar_x, health_bar_y, health_bar_width, health_bar_height))
+    
+    # Aktuální zdraví
+    if player_alive:
+        health_width = int((player_health / max_player_health) * health_bar_width)
+        health_color = GREEN if player_health > 50 else YELLOW
+        pygame.draw.rect(screen, health_color, (health_bar_x, health_bar_y, health_width, health_bar_height))
+    
+    if not player_alive:
+        death_text = font.render("MRTVÝ - Stiskni R pro respawn", True, RED)
+        screen.blit(death_text, (SCREEN_WIDTH // 2 - 150, SCREEN_HEIGHT // 2))
+    
+    # Text se zdravím
+    health_text = font.render(f"HP: {player_health}/{max_player_health}", True, WHITE)
+    screen.blit(health_text, (health_bar_x, health_bar_y + health_bar_height + 5))
+    
     # Vykreslení zbraně v levém dolním rohu
     weapon_info_bg = pygame.Rect(10, SCREEN_HEIGHT - 60, 300, 50)
     pygame.draw.rect(screen, (0, 0, 0, 128), weapon_info_bg)
@@ -490,6 +525,9 @@ def calculate_angle_to_mouse(player_screen_x, player_screen_y):
 def shoot(weapon_name):
     global weapon_cooldowns
     
+    if not player_alive:
+        return False
+    
     # Kontrola cooldownu
     if weapon_cooldowns[weapon_name] > 0:
         return False
@@ -533,6 +571,34 @@ def change_weapon(direction):
     current_weapon = weapon_names[current_weapon_index]
     print(f"Zbraň změněna na: {current_weapon}")
 
+def take_damage(damage):
+    global player_health, player_alive
+    if not player_alive:
+        return
+    
+    player_health -= damage
+    if player_health <= 0:
+        player_health = 0
+        player_alive = False
+
+def heal_player(amount):
+    global player_health
+    if not player_alive:
+        return
+    
+    old_health = player_health
+    player_health = min(max_player_health, player_health + amount)
+
+def respawn_player():
+    global player_health, player_alive, player_x, player_y
+    print("Respawn funkce byla zavolána!")
+    if not player_alive:
+        player_alive = True
+        heal_player(max_player_health)
+        
+        player_x = random.randint(BOUNDARY_WIDTH * TILE_SIZE, (MAP_WIDTH - BOUNDARY_WIDTH) * TILE_SIZE)
+        player_y = random.randint(BOUNDARY_WIDTH * TILE_SIZE, (MAP_HEIGHT - BOUNDARY_WIDTH) * TILE_SIZE)
+        
 # WebSocket komunikace a herní smyčka
 async def game_loop():
     global players, players_interpolated, players_prev, connected, status
@@ -559,6 +625,8 @@ async def game_loop():
                     for event in pygame.event.get():
                         if event.type == pygame.QUIT or (event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE):
                             running = False
+                        elif event.type == pygame.KEYDOWN and event.key == pygame.K_r and not player_alive:
+                            respawn_player()
                         elif event.type == pygame.KEYDOWN and event.key == pygame.K_t:
                             tile_x, tile_y = get_player_tile_position()
                             add_image("images/tree1.png", tile_x + 2, tile_y + 2, 2.0)
@@ -570,23 +638,24 @@ async def game_loop():
                                 change_weapon(1)
                             elif event.button == 5:
                                 change_weapon(-1)
-
-                    keys = pygame.key.get_pressed()
-                    dx = dy = 0
-                    if keys[pygame.K_w] or keys[pygame.K_UP]: dy -= PLAYER_SPEED
-                    if keys[pygame.K_s] or keys[pygame.K_DOWN]: dy += PLAYER_SPEED
-                    if keys[pygame.K_a] or keys[pygame.K_LEFT]: dx -= PLAYER_SPEED
-                    if keys[pygame.K_d] or keys[pygame.K_RIGHT]: dx += PLAYER_SPEED
-                    if dx and dy:
-                        dx *= 0.7071
-                        dy *= 0.7071
+                                
+                    if player_alive:
+                        keys = pygame.key.get_pressed()
+                        dx = dy = 0
+                        if keys[pygame.K_w] or keys[pygame.K_UP]: dy -= PLAYER_SPEED
+                        if keys[pygame.K_s] or keys[pygame.K_DOWN]: dy += PLAYER_SPEED
+                        if keys[pygame.K_a] or keys[pygame.K_LEFT]: dx -= PLAYER_SPEED
+                        if keys[pygame.K_d] or keys[pygame.K_RIGHT]: dx += PLAYER_SPEED
+                        if dx and dy:
+                            dx *= 0.7071
+                            dy *= 0.7071
 
                     is_moving = dx != 0 or dy != 0
                     if is_moving:
                         move_player(dx, dy)
 
                         # Kontrola kolizí
-                        check_medkit_collision(player_x, player_y, player_radius, TILE_SIZE, MAP_WIDTH, MAP_HEIGHT, BOUNDARY_WIDTH, medkits=medkits)
+                        check_medkit_collision(player_x, player_y, player_radius, TILE_SIZE, MAP_WIDTH, MAP_HEIGHT, BOUNDARY_WIDTH, heal_player, medkits=medkits)
 
                     player_angle = calculate_angle_to_mouse(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2)
 
@@ -609,8 +678,10 @@ async def game_loop():
                             "x": x,
                             "y": y,
                             "angle": player_angle,
-                            "weapon": current_weapon
-                        }
+                            "weapon": current_weapon,
+                            "health": player_health,
+                            "alive": player_alive
+                            }
                         if shoot_this_frame and len(projectiles) > 0:
                             last = projectiles[-1]
                             message["projectile"] = {
@@ -706,6 +777,8 @@ async def game_loop():
                     draw_flag(screen, player_x, player_y, pygame.time.get_ticks() / 1000.0)
                     draw_player(screen, player_x, player_y)
                     draw_other_players(screen, player_x, player_y)
+                    
+                    if keys[pygame.K_SPACE]: take_damage(5)
                     
                     # Vykreslení itemů
                     for medkit_inst in medkits:
