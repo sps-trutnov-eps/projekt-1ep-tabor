@@ -36,17 +36,26 @@ class PowerUp:
     def __init__(self, x, y, image_path, effect_type, duration=5):
         self.x = x
         self.y = y
-        self.image = pygame.image.load(image_path).convert_alpha()
-        self.image = pygame.transform.scale(self.image, (TITLE_SIZE, TITLE_SIZE))
+        try:    
+            self.image = pygame.image.load(image_path).convert_alpha()
+            self.image = pygame.transform.scale(self.image, (TITLE_SIZE, TITLE_SIZE))
+        except:
+            self.image = pygame.Surface((TILE_SIZE, TILE_SIZE))
+            self.image.fill((255, 255, 0))
+        
         self.rect = self.image.get_rect(center=(x, y))
         self.effect_type = effect_type
         self.duration = duration
         self.active = True
     
     def draw(self, screen, camera_x, camera_y):
+        if not self.active:
+            return
         screen_x = int(self.x - camera_x + SCREEN_WIDTH // 2)
         screen_y = int(self.y - camera_y + SCREEN_WIDTH // 2)
         screen.blit(self.image, (screen_x - TITLE_SIZE // 2, screen_y - TITLE_SIZE // 2))
+    
+    
         
 
 # Konstanty pro herní mapu
@@ -55,8 +64,8 @@ BOUNDARY_WIDTH = 5
 MAP_WIDTH = 100
 MAP_HEIGHT = 100
 PLAYER_SIZE_MULTIPLIER = 2.5
-BASED_SPEED = 4
-PLAYER_SPEED = BASED_SPEED
+BASE_SPEED = 4
+PLAYER_SPEED = BASE_SPEED
 
 # Weapons configuration
 WEAPONS = {
@@ -454,6 +463,8 @@ async def game_loop():
                 running = True
                 while running:
                     current_time = time.time()
+                    
+                    
 
                     # Zpracování událostí
                     for event in pygame.event.get():
@@ -479,6 +490,14 @@ async def game_loop():
                     # Zpracování vstupů
                     keys = pygame.key.get_pressed()
                     dx, dy = 0, 0
+                    
+                    if sprint_active:
+                        sprint_timer -= 1
+                        if sprint_timer <=0:
+                            sprint_active = False
+                            PLAYER_SPEED = BASE_SPEED
+                            
+                    current_speed = PLAYER_SPEED
 
                     if keys[pygame.K_w] or keys[pygame.K_UP]: dy -= PLAYER_SPEED
                     if keys[pygame.K_s] or keys[pygame.K_DOWN]: dy += PLAYER_SPEED
@@ -493,18 +512,27 @@ async def game_loop():
                     # Aktualizace stavu pohybu
                     moved = (dx != 0 or dy != 0)
                     is_moving = moved
-
+                    
+                    def update_powerups():
+                        global sprint_active, sprint_timer
+                        
+                        player_rect = pygame.Rect(player_x - player_radius, player_y - playeer_radius,
+                                                  player_radius * 2, player_radius * 2)
+                    
+                        for power_up in power_ups:
+                            if power_up.active and power_up.rect.collidepoint(player_x, player_y):
+                                if power_up.effect.type == "sprint":
+                                    sprint_active = True
+                                    sprint_timer = power_up.duration * 60
+                                    PLAYER_SPEED = BASE_SPEED * 2
+                                    print("Sprint aktivován!")
+                                power_up.active = False
+                                power_ups.remove(power_up)
+                    
                     # Provedení pohybu
                     if moved:
                         move_player(dx, dy)
-                    
-                    for power_up in power_ups:
-                        if power_up.active and power_up.rect.collidepoint(player_x, player_y):
-                            if power_up.effect.type == "sprint":
-                                sprint_active = True
-                                sprint_timer = power_up.duration * 60
-                                print("Sprint aktivován!")
-                            power_up.active = False
+                        update_powerups()
 
                     # Výpočet úhlu mezi hráčem a kurzorem myši
                     player_screen_x = int(SCREEN_WIDTH // 2)
