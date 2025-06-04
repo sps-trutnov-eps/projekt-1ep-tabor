@@ -278,7 +278,24 @@ def draw_map(screen, camera_x, camera_y):
             if -TILE_SIZE <= screen_x <= SCREEN_WIDTH+TILE_SIZE and -TILE_SIZE <= screen_y <= SCREEN_HEIGHT+TILE_SIZE:
                 barva = vypocitej_tmavost_hranice(x, y)
                 pygame.draw.rect(screen, barva, (screen_x, screen_y, TILE_SIZE, TILE_SIZE))
-   
+
+    # --- Vykreslení vodicí mřížky ---
+    GRID_SPACING = TILE_SIZE * 2  # Dvojnásobný rozestup
+    GRID_COLOR = (60, 100, 60)  # Tmavší zelená
+    # Svislé čáry
+    grid_start_x = ((start_x * TILE_SIZE) // GRID_SPACING) * GRID_SPACING
+    grid_end_x = ((end_x * TILE_SIZE) // GRID_SPACING + 1) * GRID_SPACING
+    for gx in range(grid_start_x, grid_end_x, GRID_SPACING):
+        screen_x = (gx - camera_x) + SCREEN_WIDTH // 2
+        pygame.draw.line(screen, GRID_COLOR, (screen_x, (start_y * TILE_SIZE - camera_y) + SCREEN_HEIGHT // 2), (screen_x, (end_y * TILE_SIZE - camera_y) + SCREEN_HEIGHT // 2), 1)
+    # Vodorovné čáry
+    grid_start_y = ((start_y * TILE_SIZE) // GRID_SPACING) * GRID_SPACING
+    grid_end_y = ((end_y * TILE_SIZE) // GRID_SPACING + 1) * GRID_SPACING
+    for gy in range(grid_start_y, grid_end_y, GRID_SPACING):
+        screen_y = (gy - camera_y) + SCREEN_HEIGHT // 2
+        pygame.draw.line(screen, GRID_COLOR, ((start_x * TILE_SIZE - camera_x) + SCREEN_WIDTH // 2, screen_y), ((end_x * TILE_SIZE - camera_x) + SCREEN_WIDTH // 2, screen_y), 1)
+    # --- konec mřížky ---
+
     # Vykreslení obrazových objektů
     for img in images:
         rel_x = img['x'] - kamera_tile_x
