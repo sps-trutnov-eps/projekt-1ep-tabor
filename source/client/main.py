@@ -40,7 +40,8 @@ class PowerUp:
         self.image = pygame.transform.scale(self.image, (TITLE_SIZE, TITLE_SIZE))
         self.rect = self.image.get_rect(center=(x, y))
         self.effect_type = effect_type
-        self.duration = durationself.active = True
+        self.duration = duration
+        self.active = True
     
     def draw(self, screen, camera_x, camera_y):
         screen_x = int(self.x - camera_x + SCREEN_WIDTH // 2)
@@ -54,7 +55,8 @@ BOUNDARY_WIDTH = 5
 MAP_WIDTH = 100
 MAP_HEIGHT = 100
 PLAYER_SIZE_MULTIPLIER = 2.5
-PLAYER_SPEED = 4
+BASED_SPEED = 4
+PLAYER_SPEED = BASED_SPEED
 
 # Weapons configuration
 WEAPONS = {
@@ -113,6 +115,9 @@ current_weapon_index = 0
 weapon_names = list(WEAPONS.keys())
 current_weapon = weapon_names[current_weapon_index]
 weapon_cooldowns = {name: 0 for name in WEAPONS}
+power_ups = []
+sprint_active = False
+sprint_timer = 0
 
 # Inicializace hráče
 x = random.randint(50, SCREEN_WIDTH-50)  # Inicializace pro klienta
@@ -457,6 +462,10 @@ async def game_loop():
                         elif event.type == pygame.KEYDOWN and event.key == pygame.K_t:
                             player_tile_x, player_tile_y = get_player_tile_position()
                             add_image("images/tree1.png", player_tile_x + 2, player_tile_y + 2, 2.0)
+                        elif event.type == pygame.KEYDOWN and event.key == pygame.K_p:
+                            tile_x, tile_y = get_player_tile_position()
+                            sprint = PowerUp(tile_x * TILE_SIZE, tile_y * TILE_SIZE, "images/sprint.png", "sprint", duration=5)
+                            power_ups.append(sprint)
                         elif event.type == pygame.MOUSEBUTTONDOWN:
                             # Levé tlačítko myši pro střelbu
                             if event.button == 1:
@@ -488,6 +497,14 @@ async def game_loop():
                     # Provedení pohybu
                     if moved:
                         move_player(dx, dy)
+                    
+                    for power_up in power_ups:
+                        if power_up.active and power_up.rect.collidepoint(player_x, player_y):
+                            if power_up.effect.type == "sprint":
+                                sprint_active = True
+                                sprint_timer = power_up.duration * 60
+                                print("Sprint aktivován!")
+                            power_up.active = False
 
                     # Výpočet úhlu mezi hráčem a kurzorem myši
                     player_screen_x = int(SCREEN_WIDTH // 2)
@@ -498,6 +515,13 @@ async def game_loop():
                     for weapon in weapon_cooldowns:
                         if weapon_cooldowns[weapon] > 0:
                             weapon_cooldowns[weapon] -= 1
+                    
+                    if sprint_active:
+                        PLAYER_SPEED = BASE_SPEED * 2
+                        sprint_timer -= 1
+                        if sprint_timer <= 0:
+                            sprint_active = False
+                            PLAYER_SPEED = BASE_SPEED
 
                     # Posílání dat serveru (při pohybu nebo po uplynutí intervalu)
                     if moved or current_time - last_update_time >= UPDATE_INTERVAL:
@@ -569,11 +593,16 @@ async def game_loop():
                             else:
                                 # Pokud nemáme předchozí pozici, použijeme aktuální
                                 players_interpolated[player_id] = pos
+                    
 
                     # Vykreslení
                     draw_map(screen, player_x, player_y)
                     draw_player(screen, player_x, player_y)
                     draw_other_players(screen, player_x, player_y)
+                    
+                    for power_up in power_ups:
+                        if power_up.active:
+                            power_up.draw(screen, player_x, player_y)
                     
                     # Vykreslení UI
                     draw_ui(screen, font)
