@@ -6,6 +6,7 @@ from aiohttp import web
 # Globální proměnné
 PORT = int(os.environ.get("PORT", 5555))
 CLIENTS = {}  # Ukládá připojené hráče ve formátu {id: (x, y)}
+SCOOTERS = {}  # Ukládá koloběžky ve formátu {id: scooter_data}
 WEBSOCKET_CONNECTIONS = set()  # Ukládá aktivní WebSocket připojení
 
 # Generátor ID klientů
@@ -45,8 +46,13 @@ async def handle_websocket(request):
                     CLIENTS[client_id] = (data["x"], data["y"])
                     print(f"[UPDATE] Klient {client_id} pozice: ({data['x']}, {data['y']})")
                     
+                    # Zpracování koloběžky
+                    if "scooter" in data:
+                        SCOOTERS[client_id] = data["scooter"]
+                        print(f"[SCOOTER] Klient {client_id} koloběžka: {data['scooter']}")
+                    
                     # Aktualizace projektilu
-                    if "projectile" in CLIENTS[client_id]:
+                    if "projectile" in data:
                         # Přepošleme projektil všem klientům (včetně původního)
                         for other_ws in WEBSOCKET_CONNECTIONS:
                             if other_ws.closed:
@@ -55,14 +61,18 @@ async def handle_websocket(request):
                                 await other_ws.send_json({
                                     "projectile_broadcast": {
                                         "owner": client_id,
-                                        **CLIENTS[client_id]["projectile"]
+                                        **data["projectile"]
                                     }
                                 })
                             except:
                                 pass
                     
-                    # Posílá zpět všechny pozice hráčů
-                    await ws.send_json(CLIENTS)
+                    # Posílá zpět všechny pozice hráčů a koloběžky
+                    response_data = {
+                        "players": CLIENTS,
+                        "scooters": SCOOTERS
+                    }
+                    await ws.send_json(response_data)
                     
                 except json.JSONDecodeError:
                     print(f"[ERROR] Neplatný JSON od klienta {client_id}")
@@ -80,6 +90,8 @@ async def handle_websocket(request):
         WEBSOCKET_CONNECTIONS.discard(ws)
         if client_id in CLIENTS:
             del CLIENTS[client_id]
+        if client_id in SCOOTERS:
+            del SCOOTERS[client_id]
         print(f"[CLEANUP] Klient {client_id} odstraněn")
         
     return ws
@@ -98,6 +110,7 @@ async def handle_root(request):
                 .info { background-color: #f8f9fa; padding: 20px; border-radius: 5px; }
                 .status { margin-top: 20px; }
                 .clients { margin-top: 20px; }
+                .scooters { margin-top: 20px; }
             </style>
         </head>
         <body>
@@ -109,10 +122,15 @@ async def handle_root(request):
             <div class="status">
                 <h2>Stav serveru</h2>
                 <p>Počet připojených klientů: <strong>""" + str(len(CLIENTS)) + """</strong></p>
+                <p>Počet koloběžek: <strong>""" + str(len(SCOOTERS)) + """</strong></p>
             </div>
             <div class="clients">
                 <h2>Aktivní hráči</h2>
                 <pre>""" + json.dumps(CLIENTS, indent=2) + """</pre>
+            </div>
+            <div class="scooters">
+                <h2>Koloběžky</h2>
+                <pre>""" + json.dumps(SCOOTERS, indent=2) + """</pre>
             </div>
         </body>
     </html>
@@ -123,7 +141,9 @@ async def handle_status(request):
     """Endpoint pro zobrazení stavu serveru"""
     status = {
         "clients_count": len(CLIENTS),
-        "clients": CLIENTS
+        "clients": CLIENTS,
+        "scooters_count": len(SCOOTERS),
+        "scooters": SCOOTERS
     }
     return web.json_response(status)
 

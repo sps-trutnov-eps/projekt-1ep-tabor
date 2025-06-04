@@ -162,6 +162,10 @@ projectiles = []
 PROJECTILE_SPEED = 10
 PROJECTILE_LIFETIME = 60  # ve snímcích
 
+#koloběžky
+player_scooters = {}  
+scooter_updates = {}
+
 # Funkce pro přidání PNG obrázku na mapu
 def add_image(image_path, x, y, scale=1.0):
     try:
@@ -214,13 +218,26 @@ def move_player(dx, dy):
     y = (player_y / (MAP_HEIGHT * TILE_SIZE)) * SCREEN_HEIGHT
     return True
 
-def move_player_or_scooter(dx, dy, is_scooter=False):
-    global player_x, player_y, x, y, scooter
+def check_scooter_collision(scooter_obj):
+    """Kontrola kolize koloběžky s objekty na mapě"""
+    scooter_hitbox = pygame.Rect(scooter_obj.x - scooter_obj.radius, 
+                                scooter_obj.y - scooter_obj.radius, 
+                                scooter_obj.radius * 2, scooter_obj.radius * 2)
     
-    if is_scooter and scooter:
+    for img in images:
+        if img['hitbox'].colliderect(scooter_hitbox):
+            return True
+    return False
+
+def move_player_or_scooter(dx, dy, is_scooter=False):
+    global player_x, player_y, x, y, scooter, player_scooters, my_id
+    
+    current_scooter = player_scooters.get(my_id) if my_id else scooter
+    
+    if is_scooter and current_scooter:
         # Pohyb koloběžky
-        new_x = scooter.x + dx
-        new_y = scooter.y + dy
+        new_x = current_scooter.x + dx
+        new_y = current_scooter.y + dy
         
         # Kontrola hranic mapy
         tile_x = int(new_x // TILE_SIZE)
@@ -231,17 +248,17 @@ def move_player_or_scooter(dx, dy, is_scooter=False):
             return False
         
         # Dočasně nastavíme pozici pro kontrolu kolize
-        old_x, old_y = scooter.x, scooter.y
-        scooter.x, scooter.y = new_x, new_y
+        old_x, old_y = current_scooter.x, current_scooter.y
+        current_scooter.x, current_scooter.y = new_x, new_y
         
-        if scooter.check_collision_with_images():
-            scooter.x, scooter.y = old_x, old_y  # Vrátíme zpět
+        if check_scooter_collision(current_scooter):
+            current_scooter.x, current_scooter.y = old_x, old_y  # Vrátíme zpět
             return False
         
         # Aktualizace pozice hráče, pokud je na koloběžce
-        if scooter.is_player_on:
-            player_x = scooter.x
-            player_y = scooter.y
+        if current_scooter.is_player_on:
+            player_x = current_scooter.x
+            player_y = current_scooter.y
             
             # Aktualizace pozice pro síťovou komunikaci
             x = (player_x / (MAP_WIDTH * TILE_SIZE)) * SCREEN_WIDTH
@@ -268,6 +285,19 @@ def vypocitej_tmavost_hranice(x, y):
         return (0, g_hodnota, 0)
     else:
         return DARKER_GREEN
+    
+def draw_all_scooters(screen, camera_x, camera_y):
+    """Vykreslí všechny koloběžky všech hráčů"""
+    global player_scooters, my_id
+    
+    for player_id, scooter_obj in player_scooters.items():
+        if scooter_obj:
+            # Pokud je to naše koloběžka a jsme na ní, vykreslí se ve středu
+            if player_id == my_id and scooter_obj.is_player_on:
+                scooter_obj.draw(screen, camera_x, camera_y)
+            # Ostatní koloběžky se vykreslují na jejich pozici ve světě
+            elif not (player_id == my_id and scooter_obj.is_player_on):
+                scooter_obj.draw(screen, camera_x, camera_y)
 
 # Funkce pro vykreslení mapy
 def draw_map(screen, camera_x, camera_y):
@@ -465,19 +495,43 @@ def change_weapon(direction):
     current_weapon_index = (current_weapon_index + direction) % len(weapon_names)
     current_weapon = weapon_names[current_weapon_index]
     print(f"Zbraň změněna na: {current_weapon}")
+    
+def get_scooter_data_for_network():
+    """Vrátí data o koloběžce pro síťovou komunikaci"""
+    global player_scooters, my_id
+    
+    if my_id and my_id in player_scooters and player_scooters[my_id]:
+        return player_scooters[my_id].to_dict()
+    return None
 
+def update_scooter_from_network(player_id, scooter_data):
+    """Aktualizuje koloběžku jiného hráče ze síťových dat"""
+    global player_scooters
+    
+    if player_id not in player_scooters:
+        player_scooters[player_id] = Scooter(scooter_data['x'], scooter_data['y'])
+    
+    scooter_obj = player_scooters[player_id]
+    scooter_obj.x = scooter_data['x']
+    scooter_obj.y = scooter_data['y']
+    scooter_obj.direction = scooter_data['direction']
+    scooter_obj.is_player_on = scooter_data['is_player_on']
+    
 # WebSocket komunikace a herní smyčka
 async def game_loop():
     global players, players_interpolated, players_prev, connected, status
     global x, y, player_x, player_y, my_id, response_time, last_update_time, is_moving
     global player_angle, current_weapon, weapon_cooldowns, projectiles
+    global player_scooters, scooter_updates, was_e_pressed
     
-    scooter = Scooter(
-    MAP_WIDTH // 2 * TILE_SIZE + 100,  # Pozice vedle středu mapy
-    MAP_HEIGHT // 2 * TILE_SIZE + 100
-)
-
-    shoot_this_frame = False  # Příznak pro odeslání projektilu
+    # Inicializace koloběžky pro našeho hráče
+    initial_scooter = Scooter(
+        MAP_WIDTH // 2 * TILE_SIZE + 100,
+        MAP_HEIGHT // 2 * TILE_SIZE + 100
+    )
+    
+    shoot_this_frame = False
+    was_e_pressed = False
 
     try:
         async with aiohttp.ClientSession() as session:
@@ -515,22 +569,28 @@ async def game_loop():
                     keys = pygame.key.get_pressed()
                     dx, dy = 0, 0
                     
+                    # Inicializace koloběžky pro našeho hráče, pokud ještě nemáme
+                    if my_id and my_id not in player_scooters:
+                        player_scooters[my_id] = initial_scooter
+                    
+                    current_scooter = player_scooters.get(my_id) if my_id else None
+                    
                     current_e_pressed = keys[pygame.K_e]
                     if current_e_pressed and not was_e_pressed:
-                        if scooter:
+                        if current_scooter:
                             # Výpočet vzdálenosti mezi hráčem a koloběžkou
-                            distance = math.sqrt((player_x - scooter.x)**2 + (player_y - scooter.y)**2)
+                            distance = math.sqrt((player_x - current_scooter.x)**2 + (player_y - current_scooter.y)**2)
                             
-                            if not scooter.is_player_on and distance < 60:
+                            if not current_scooter.is_player_on and distance < 60:
                                 # Nasednout na koloběžku
-                                scooter.is_player_on = True
-                                scooter.x = player_x
-                                scooter.y = player_y
-                                scooter.direction = player_angle
+                                current_scooter.is_player_on = True
+                                current_scooter.x = player_x
+                                current_scooter.y = player_y
+                                current_scooter.direction = player_angle
                                 print("Nasedli jste na koloběžku!")
-                            elif scooter.is_player_on:
+                            elif current_scooter.is_player_on:
                                 # Sesednout z koloběžky
-                                scooter.is_player_on = False
+                                current_scooter.is_player_on = False
                                 # Posun hráče mírně od koloběžky
                                 offset_x = math.cos(math.radians(player_angle)) * 40
                                 offset_y = math.sin(math.radians(player_angle)) * 40
@@ -543,28 +603,21 @@ async def game_loop():
                                 print("Sesedli jste z koloběžky!")
                     was_e_pressed = current_e_pressed
                     
-
-                    if scooter and scooter.is_player_on:
-                        # Pohyb na koloběžce - jiné ovládání
+                    if current_scooter and current_scooter.is_player_on:
+                        # Pohyb na koloběžce
                         if keys[pygame.K_w] or keys[pygame.K_UP]:
-                            # Dopředu podle směru koloběžky
-                            dx = math.cos(math.radians(scooter.direction)) * scooter.speed
-                            dy = math.sin(math.radians(scooter.direction)) * scooter.speed
+                            dx = math.cos(math.radians(current_scooter.direction)) * current_scooter.speed
+                            dy = math.sin(math.radians(current_scooter.direction)) * current_scooter.speed
                         if keys[pygame.K_s] or keys[pygame.K_DOWN]:
-                            # Dozadu podle směru koloběžky
-                            dx = -math.cos(math.radians(scooter.direction)) * (scooter.speed * 0.5)
-                            dy = -math.sin(math.radians(scooter.direction)) * (scooter.speed * 0.5)
+                            dx = -math.cos(math.radians(current_scooter.direction)) * (current_scooter.speed * 0.5)
+                            dy = -math.sin(math.radians(current_scooter.direction)) * (current_scooter.speed * 0.5)
                         if keys[pygame.K_a] or keys[pygame.K_LEFT]:
-                            # Zatáčení vlevo
-                            scooter.direction = (scooter.direction - 4) % 360
+                            current_scooter.direction = (current_scooter.direction - 4) % 360
                         if keys[pygame.K_d] or keys[pygame.K_RIGHT]:
-                            # Zatáčení vpravo
-                            scooter.direction = (scooter.direction + 4) % 360
+                            current_scooter.direction = (current_scooter.direction + 4) % 360
                         
-                        # Aktualizace úhlu hráče podle koloběžky
-                        player_angle = scooter.direction
+                        player_angle = current_scooter.direction
                         
-                        # Provedení pohybu koloběžky
                         if dx != 0 or dy != 0:
                             moved = move_player_or_scooter(dx, dy, is_scooter=True)
                             is_moving = moved
@@ -577,19 +630,20 @@ async def game_loop():
                         if keys[pygame.K_a] or keys[pygame.K_LEFT]: dx -= PLAYER_SPEED
                         if keys[pygame.K_d] or keys[pygame.K_RIGHT]: dx += PLAYER_SPEED
 
-                        # Diagonální pohyb normalizujeme
                         if dx != 0 and dy != 0:
                             dx *= 0.7071
                             dy *= 0.7071
 
-                        # Aktualizace stavu pohybu
                         moved = (dx != 0 or dy != 0)
 
-                        # Provedení pohybu
                         if moved:
                             move_player_or_scooter(dx, dy, is_scooter=False)
+                            is_moving = moved
+                        else:
+                            is_moving = False
 
-                    player_angle = calculate_angle_to_mouse(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2)
+                    if not (current_scooter and current_scooter.is_player_on):
+                        player_angle = calculate_angle_to_mouse(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2)
 
                     for weapon in weapon_cooldowns:
                         if weapon_cooldowns[weapon] > 0:
@@ -603,10 +657,15 @@ async def game_loop():
                         if p["lifetime"] <= 0:
                             projectiles.remove(p)
 
-                    # Posílání pozice a případně projektilu
+                    # Posílání pozice a koloběžky
                     if is_moving or shoot_this_frame or current_time - last_update_time >= UPDATE_INTERVAL:
                         start_time = time.time()
                         message = {"x": x, "y": y}
+
+                        # Přidání dat o koloběžce
+                        scooter_data = get_scooter_data_for_network()
+                        if scooter_data:
+                            message["scooter"] = scooter_data
 
                         if shoot_this_frame and len(projectiles) > 0:
                             last = projectiles[-1]
@@ -628,7 +687,7 @@ async def game_loop():
                         if msg.type == aiohttp.WSMsgType.TEXT:
                             data = json.loads(msg.data)
 
-                            # Zpracování broadcastu projektilu od jiných hráčů
+                            # Zpracování broadcastu projektilu
                             if "projectile_broadcast" in data:
                                 p = data["projectile_broadcast"]
                                 projectile = {
@@ -643,9 +702,18 @@ async def game_loop():
                                 projectiles.append(projectile)
                                 continue
 
+                            # Zpracování dat o koloběžkách
+                            if "scooters" in data:
+                                for player_id, scooter_data in data["scooters"].items():
+                                    if player_id != my_id:  # Neaktualizujeme naši vlastní koloběžku
+                                        update_scooter_from_network(player_id, scooter_data)
+
                             # Zpracování pozic hráčů
                             players_prev = players_interpolated.copy() if players_interpolated else {}
-                            players = data
+                            if "players" in data:
+                                players = data["players"]
+                            else:
+                                players = data
 
                             if is_moving:
                                 response_time = (time.time() - start_time) * 1000
@@ -655,6 +723,9 @@ async def game_loop():
                                     if isinstance(pos, list) and abs(pos[0] - x) < 15 and abs(pos[1] - y) < 15:
                                         my_id = pid
                                         print(f"Moje ID: {my_id}")
+                                        # Přiřazení koloběžky našemu ID
+                                        if my_id not in player_scooters:
+                                            player_scooters[my_id] = initial_scooter
                                         break
 
                             if my_id:
@@ -673,7 +744,7 @@ async def game_loop():
 
                     status = "Připojeno (pohyb)" if is_moving else "Připojeno (stabilní)"
 
-                    # Interpolace
+                    # Interpolace hráčů
                     players_interpolated = {}
                     for player_id, pos in players.items():
                         if isinstance(pos, list):
@@ -688,11 +759,9 @@ async def game_loop():
                             else:
                                 players_interpolated[player_id] = pos
 
+                    # Vykreslování
                     draw_map(screen, player_x, player_y)
-                    
-                    if scooter:
-                        scooter.draw(screen, player_x, player_y)
-                        
+                    draw_all_scooters(screen, player_x, player_y)  # Vykreslí všechny koloběžky
                     draw_player(screen, player_x, player_y)
                     draw_other_players(screen, player_x, player_y)
 
