@@ -412,7 +412,7 @@ def draw_other_players(screen, camera_x, camera_y):
 def draw_ui(screen, font):
     health_bar_width = 200
     health_bar_height = 20
-    health_bar_x = SCREEN_WIDTH - health_bar_width - 20
+    health_bar_x = SCREEN_WIDTH / 2 - health_bar_width / 2
     health_bar_y = 20
     
     # Pozadí health baru
@@ -421,7 +421,7 @@ def draw_ui(screen, font):
     # Aktuální zdraví
     if player_alive:
         health_width = int((player_health / max_player_health) * health_bar_width)
-        health_color = GREEN if player_health > 50 else YELLOW if player_health > 25 else RED
+        health_color = GREEN if player_health > 50 else YELLOW
         pygame.draw.rect(screen, health_color, (health_bar_x, health_bar_y, health_width, health_bar_height))
     
     if not player_alive:
