@@ -641,7 +641,7 @@ async def game_loop():
                             "x": x,
                             "y": y,
                             "angle": player_angle,
-                            "weapon": current_weapon
+                            "weapon": current_weapon,
                             "health": player_health,
                             "alive": player_alive
                             }
