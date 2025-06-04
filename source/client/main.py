@@ -42,6 +42,7 @@ PLAYER_SIZE_MULTIPLIER = 2.5
 PLAYER_SPEED = 4
 
 # Weapons configuration
+# Weapons configuration
 WEAPONS = {
     "Crossbow": {
         "image": "Crossbow_Gun.png",
@@ -49,7 +50,11 @@ WEAPONS = {
         "offset_x": 20,
         "offset_y": 10,
         "damage": 25,
-        "cooldown": 30
+        "cooldown": 30,
+        "projectile_speed": 8,
+        "projectile_lifetime": 80,
+        "projectile_size": 4,
+        "projectile_color": (255, 255, 0)  # Yellow
     },
     "Rocket Launcher": {
         "image": "RocketLauncher_Gun.png",
@@ -57,7 +62,11 @@ WEAPONS = {
         "offset_x": 25,
         "offset_y": 15,
         "damage": 50,
-        "cooldown": 60
+        "cooldown": 60,
+        "projectile_speed": 6,
+        "projectile_lifetime": 100,
+        "projectile_size": 11,
+        "projectile_color": (255, 100, 0)  # Orange
     },
     "Shotgun": {
         "image": "Shotgun_Gun.png",
@@ -65,7 +74,11 @@ WEAPONS = {
         "offset_x": 20,
         "offset_y": 10,
         "damage": 35,
-        "cooldown": 45
+        "cooldown": 45,
+        "projectile_speed": 12,
+        "projectile_lifetime": 40,
+        "projectile_size": 6,
+        "projectile_color": (255, 255, 255)  # White
     },
     "Sniper": {
         "image": "Sniper_Gun.png",
@@ -73,7 +86,11 @@ WEAPONS = {
         "offset_x": 30,
         "offset_y": 10,
         "damage": 75,
-        "cooldown": 90
+        "cooldown": 90,
+        "projectile_speed": 15,
+        "projectile_lifetime": 120,
+        "projectile_size": 3,
+        "projectile_color": (0, 255, 255)  # Cyan
     }
 }
 
@@ -261,7 +278,24 @@ def draw_map(screen, camera_x, camera_y):
             if -TILE_SIZE <= screen_x <= SCREEN_WIDTH+TILE_SIZE and -TILE_SIZE <= screen_y <= SCREEN_HEIGHT+TILE_SIZE:
                 barva = vypocitej_tmavost_hranice(x, y)
                 pygame.draw.rect(screen, barva, (screen_x, screen_y, TILE_SIZE, TILE_SIZE))
-   
+
+    # --- Vykreslení vodicí mřížky ---
+    GRID_SPACING = TILE_SIZE * 2  # Dvojnásobný rozestup
+    GRID_COLOR = (60, 100, 60)  # Tmavší zelená
+    # Svislé čáry
+    grid_start_x = ((start_x * TILE_SIZE) // GRID_SPACING) * GRID_SPACING
+    grid_end_x = ((end_x * TILE_SIZE) // GRID_SPACING + 1) * GRID_SPACING
+    for gx in range(grid_start_x, grid_end_x, GRID_SPACING):
+        screen_x = (gx - camera_x) + SCREEN_WIDTH // 2
+        pygame.draw.line(screen, GRID_COLOR, (screen_x, (start_y * TILE_SIZE - camera_y) + SCREEN_HEIGHT // 2), (screen_x, (end_y * TILE_SIZE - camera_y) + SCREEN_HEIGHT // 2), 1)
+    # Vodorovné čáry
+    grid_start_y = ((start_y * TILE_SIZE) // GRID_SPACING) * GRID_SPACING
+    grid_end_y = ((end_y * TILE_SIZE) // GRID_SPACING + 1) * GRID_SPACING
+    for gy in range(grid_start_y, grid_end_y, GRID_SPACING):
+        screen_y = (gy - camera_y) + SCREEN_HEIGHT // 2
+        pygame.draw.line(screen, GRID_COLOR, ((start_x * TILE_SIZE - camera_x) + SCREEN_WIDTH // 2, screen_y), ((end_x * TILE_SIZE - camera_x) + SCREEN_WIDTH // 2, screen_y), 1)
+    # --- konec mřížky ---
+
     # Vykreslení obrazových objektů
     for img in images:
         rel_x = img['x'] - kamera_tile_x
@@ -326,19 +360,40 @@ def draw_player(screen, offset_x, offset_y):
 
 # Funkce pro vykreslení ostatních hráčů z multiplayer
 def draw_other_players(screen, camera_x, camera_y):
-    for player_id, pos in players_interpolated.items():
-        if isinstance(pos, list) or isinstance(pos, tuple):
-            if player_id != my_id:  # Kreslíme jen ostatní hráče
-                # Konverze souřadnic z relativních (0-800, 0-600) na mapové
-                map_x = (pos[0] / SCREEN_WIDTH) * (MAP_WIDTH * TILE_SIZE)
-                map_y = (pos[1] / SCREEN_HEIGHT) * (MAP_HEIGHT * TILE_SIZE)
-                
-                # Přepočet na obrazovku s kamerou
-                screen_x = int(map_x - camera_x + SCREEN_WIDTH // 2)
-                screen_y = int(map_y - camera_y + SCREEN_HEIGHT // 2)
-                
-                # Vykreslení ostatních hráčů
-                pygame.draw.rect(screen, GREEN, (screen_x - player_radius//2, screen_y - player_radius//2, player_radius, player_radius))
+    for player_id, pdata in players_interpolated.items():
+        if player_id != my_id and isinstance(pdata, dict):
+            # Převod mapových souřadnic na obrazovku
+            map_x = (pdata["x"] / SCREEN_WIDTH) * (MAP_WIDTH * TILE_SIZE)
+            map_y = (pdata["y"] / SCREEN_HEIGHT) * (MAP_HEIGHT * TILE_SIZE)
+            screen_x = int(map_x - camera_x + SCREEN_WIDTH // 2)
+            screen_y = int(map_y - camera_y + SCREEN_HEIGHT // 2)
+            angle = pdata.get("angle", 0)
+            weapon_name = pdata.get("weapon", weapon_names[0])
+            # Výběr textury hráče (červená/modrá podle týmu, pokud je info)
+            texture_to_draw = player_texture
+            # (Pokud chcete rozlišovat týmy, přidejte zde logiku podle pdata.get("team"))
+            rotated_texture = pygame.transform.rotate(texture_to_draw, -angle)
+            rot_rect = rotated_texture.get_rect(center=(screen_x, screen_y))
+            screen.blit(rotated_texture, rot_rect.topleft)
+            # Vykreslení zbraně
+            if weapon_name in weapon_textures:
+                weapon_info = WEAPONS[weapon_name]
+                weapon_texture = weapon_textures[weapon_name]
+                angle_rad = math.radians(angle - 90)
+                offset_distance = weapon_info["offset_x"]
+                weapon_offset_x = math.cos(angle_rad) * offset_distance
+                weapon_offset_y = math.sin(angle_rad) * offset_distance
+                weapon_x = screen_x + weapon_offset_x
+                weapon_y = screen_y + weapon_offset_y
+                rotated_weapon = pygame.transform.rotate(weapon_texture, -angle)
+                weapon_rect = rotated_weapon.get_rect(center=(weapon_x, weapon_y))
+                screen.blit(rotated_weapon, weapon_rect.topleft)
+
+    # --- Vykreslení projektilů ostatních hráčů ---
+    for p in projectiles:
+        screen_x = int(p["x"] - camera_x + SCREEN_WIDTH // 2)
+        screen_y = int(p["y"] - camera_y + SCREEN_HEIGHT // 2)
+        pygame.draw.circle(screen, p["color"], (screen_x, screen_y), p["radius"])
 
 # Funkce pro vykreslení UI
 def draw_ui(screen, font):
@@ -405,6 +460,9 @@ def shoot(weapon_name):
     # Nastavení cooldownu zbraně
     weapon_cooldowns[weapon_name] = WEAPONS[weapon_name]["cooldown"]
     
+    # Získání vlastností zbraně
+    weapon_info = WEAPONS[weapon_name]
+    
     # Vytvoření projektilu
     angle_rad = math.radians(player_angle - 90)
     dx = math.cos(angle_rad)
@@ -413,16 +471,16 @@ def shoot(weapon_name):
     projectile = {
         "x": player_x,
         "y": player_y,
-        "dx": dx * PROJECTILE_SPEED,
-        "dy": dy * PROJECTILE_SPEED,
-        "lifetime": PROJECTILE_LIFETIME,
-        "color": YELLOW,
-        "radius": 5
+        "dx": dx * weapon_info["projectile_speed"],
+        "dy": dy * weapon_info["projectile_speed"],
+        "lifetime": weapon_info["projectile_lifetime"],
+        "color": weapon_info["projectile_color"],
+        "radius": weapon_info["projectile_size"]
     }
     projectiles.append(projectile)
     
     # Zde by mohla být implementace střelby s efekty, projektily, atd.
-    print(f"Střelba ze zbraně: {weapon_name}, poškození: {WEAPONS[weapon_name]['damage']}")
+    print(f"Střelba ze zbraně: {weapon_name}, poškození: {weapon_info['damage']}")
     
     return True
     
@@ -510,8 +568,12 @@ async def game_loop():
                     # Posílání pozice a případně projektilu
                     if is_moving or shoot_this_frame or current_time - last_update_time >= UPDATE_INTERVAL:
                         start_time = time.time()
-                        message = {"x": x, "y": y}
-
+                        message = {
+                            "x": x,
+                            "y": y,
+                            "angle": player_angle,
+                            "weapon": current_weapon
+                        }
                         if shoot_this_frame and len(projectiles) > 0:
                             last = projectiles[-1]
                             message["projectile"] = {
@@ -519,9 +581,10 @@ async def game_loop():
                                 "y": last["y"],
                                 "dx": last["dx"],
                                 "dy": last["dy"],
-                                "color": list(last["color"])
+                                "color": list(last["color"]),
+                                "lifetime": last["lifetime"],
+                                "radius": last["radius"]
                             }
-
                         await ws.send_json(message)
                         last_update_time = current_time
                         shoot_this_frame = False
@@ -531,43 +594,44 @@ async def game_loop():
                         msg = await asyncio.wait_for(ws.receive(), 0.01)
                         if msg.type == aiohttp.WSMsgType.TEXT:
                             data = json.loads(msg.data)
-
                             # Zpracování broadcastu projektilu od jiných hráčů
                             if "projectile_broadcast" in data:
                                 p = data["projectile_broadcast"]
+                                # Pokud je projektil od nás, ignorujeme (už jsme ho přidali lokálně)
+                                if p.get("owner") == my_id:
+                                    continue
                                 projectile = {
                                     "x": p["x"],
                                     "y": p["y"],
                                     "dx": p["dx"],
                                     "dy": p["dy"],
-                                    "lifetime": PROJECTILE_LIFETIME,
+                                    "lifetime": p.get("lifetime", 80),  
                                     "color": tuple(p["color"]),
-                                    "radius": 6
+                                    "radius": p.get("radius", 6) 
                                 }
                                 projectiles.append(projectile)
                                 continue
-
                             # Zpracování pozic hráčů
                             players_prev = players_interpolated.copy() if players_interpolated else {}
                             players = data
-
                             if is_moving:
                                 response_time = (time.time() - start_time) * 1000
-
                             if my_id is None:
-                                for pid, pos in players.items():
-                                    if isinstance(pos, list) and abs(pos[0] - x) < 15 and abs(pos[1] - y) < 15:
+                                for pid, pdata in players.items():
+                                    if isinstance(pdata, dict) and abs(pdata["x"] - x) < 15 and abs(pdata["y"] - y) < 15:
                                         my_id = pid
                                         print(f"Moje ID: {my_id}")
                                         break
-
                             if my_id:
-                                players[my_id] = [x, y]
-
+                                players[my_id] = {
+                                    "x": x,
+                                    "y": y,
+                                    "angle": player_angle,
+                                    "weapon": current_weapon
+                                }
                             if not players_prev:
                                 players_prev = players.copy()
                                 players_interpolated = players.copy()
-
                         elif msg.type in (aiohttp.WSMsgType.CLOSED, aiohttp.WSMsgType.ERROR):
                             connected = False
                             status = "Spojení ukončeno"
@@ -579,18 +643,27 @@ async def game_loop():
 
                     # Interpolace
                     players_interpolated = {}
-                    for player_id, pos in players.items():
-                        if isinstance(pos, list):
+                    for player_id, pdata in players.items():
+                        if isinstance(pdata, dict):
                             if player_id == my_id:
-                                players_interpolated[player_id] = [x, y]
+                                players_interpolated[player_id] = {
+                                    "x": x,
+                                    "y": y,
+                                    "angle": player_angle,
+                                    "weapon": current_weapon
+                                }
                             elif player_id in players_prev:
-                                prev_x, prev_y = players_prev[player_id]
-                                new_x, new_y = pos
-                                interp_x = prev_x + (new_x - prev_x) * other_players_interpolation_factor
-                                interp_y = prev_y + (new_y - prev_y) * other_players_interpolation_factor
-                                players_interpolated[player_id] = [interp_x, interp_y]
+                                prev = players_prev[player_id]
+                                interp_x = prev["x"] + (pdata["x"] - prev["x"]) * other_players_interpolation_factor
+                                interp_y = prev["y"] + (pdata["y"] - prev["y"]) * other_players_interpolation_factor
+                                players_interpolated[player_id] = {
+                                    "x": interp_x,
+                                    "y": interp_y,
+                                    "angle": pdata.get("angle", 0),
+                                    "weapon": pdata.get("weapon", weapon_names[0])
+                                }
                             else:
-                                players_interpolated[player_id] = pos
+                                players_interpolated[player_id] = pdata
 
                     draw_map(screen, player_x, player_y)
                     draw_player(screen, player_x, player_y)
