@@ -33,12 +33,12 @@ WHITE = (255, 255, 255)
 YELLOW = (255, 255, 0)
 
 class PowerUp:
-    def __init__(self, x, y, image_path, effect_type, duration=5):
+    def __init__(self, x, y, image_path, effect_type, duration = 20):
         self.x = x
         self.y = y
         try:    
             self.image = pygame.image.load(image_path).convert_alpha()
-            self.image = pygame.transform.scale(self.image, (TITLE_SIZE, TITLE_SIZE))
+            self.image = pygame.transform.scale(self.image, (TILE_SIZE, TILE_SIZE))
         except:
             self.image = pygame.Surface((TILE_SIZE, TILE_SIZE))
             self.image.fill((255, 255, 0))
@@ -53,7 +53,7 @@ class PowerUp:
             return
         screen_x = int(self.x - camera_x + SCREEN_WIDTH // 2)
         screen_y = int(self.y - camera_y + SCREEN_WIDTH // 2)
-        screen.blit(self.image, (screen_x - TITLE_SIZE // 2, screen_y - TITLE_SIZE // 2))
+        screen.blit(self.image, (screen_x - TILE_SIZE // 2, screen_y - TILE_SIZE // 2))
     
     
         
@@ -526,7 +526,7 @@ async def game_loop():
                     
                         for power_up in power_ups:
                             if power_up.active and power_up.rect.collidepoint(player_x, player_y):
-                                if power_up.effect.type == "sprint":
+                                if power_up.effect_type == "sprint":
                                     sprint_active = True
                                     sprint_timer = power_up.duration * 60
                                     PLAYER_SPEED = BASE_SPEED * 2
