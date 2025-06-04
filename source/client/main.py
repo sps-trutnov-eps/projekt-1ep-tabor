@@ -360,59 +360,37 @@ def draw_player(screen, offset_x, offset_y):
 
 # Funkce pro vykreslení ostatních hráčů z multiplayer
 def draw_other_players(screen, camera_x, camera_y):
-    for player_id, pos in players_interpolated.items():
-        if isinstance(pos, list) or isinstance(pos, tuple):
-            if player_id != my_id:
-                # Konverze souřadnic z relativních (0-800, 0-600) na mapové
-                map_x = (pos[0] / SCREEN_WIDTH) * (MAP_WIDTH * TILE_SIZE)
-                map_y = (pos[1] / SCREEN_HEIGHT) * (MAP_HEIGHT * TILE_SIZE)
-
-                # Přepočet na obrazovku s kamerou
-                screen_x = int(map_x - camera_x + SCREEN_WIDTH // 2)
-                screen_y = int(map_y - camera_y + SCREEN_HEIGHT // 2)
-
-                # --- Nové: vykreslení hráče jako obrázku s rotací a zbraní ---
-                # Zjisti úhel natočení (pokud je k dispozici)
-                angle = 0
-                if isinstance(players.get(player_id), dict) and 'angle' in players[player_id]:
-                    angle = players[player_id]['angle']
-                else:
-                    # Odhad úhlu podle pohybu (pokud není k dispozici)
-                    angle = 0
-
-                # Výběr textury hráče (červená/modrá podle týmu, pokud je info)
-                team = 2
-                if isinstance(players.get(player_id), dict) and 'team' in players[player_id]:
-                    team = players[player_id]['team']
-                texture_to_draw = player_texture
-                if team == 3:
-                    texture_to_draw = player_texture.copy()
-                    texture_to_draw.fill(BLUE, special_flags=pygame.BLEND_RGBA_MULT)
-
-                rotated_texture = pygame.transform.rotate(texture_to_draw, -angle)
-                rot_rect = rotated_texture.get_rect(center=(screen_x, screen_y))
-                screen.blit(rotated_texture, rot_rect.topleft)
-
-                # Vykreslení zbraně (pokud je info)
-                weapon_name = weapon_names[0]
-                if isinstance(players.get(player_id), dict) and 'weapon' in players[player_id]:
-                    weapon_name = players[player_id]['weapon']
-                if weapon_name in weapon_textures:
-                    weapon_info = WEAPONS[weapon_name]
-                    weapon_texture = weapon_textures[weapon_name]
-                    angle_rad = math.radians(angle - 90)
-                    offset_distance = weapon_info["offset_x"]
-                    weapon_offset_x = math.cos(angle_rad) * offset_distance
-                    weapon_offset_y = math.sin(angle_rad) * offset_distance
-                    weapon_x = screen_x + weapon_offset_x
-                    weapon_y = screen_y + weapon_offset_y
-                    rotated_weapon = pygame.transform.rotate(weapon_texture, -angle)
-                    weapon_rect = rotated_weapon.get_rect(center=(weapon_x, weapon_y))
-                    screen.blit(rotated_weapon, weapon_rect.topleft)
+    for player_id, pdata in players_interpolated.items():
+        if player_id != my_id and isinstance(pdata, dict):
+            # Převod mapových souřadnic na obrazovku
+            map_x = (pdata["x"] / SCREEN_WIDTH) * (MAP_WIDTH * TILE_SIZE)
+            map_y = (pdata["y"] / SCREEN_HEIGHT) * (MAP_HEIGHT * TILE_SIZE)
+            screen_x = int(map_x - camera_x + SCREEN_WIDTH // 2)
+            screen_y = int(map_y - camera_y + SCREEN_HEIGHT // 2)
+            angle = pdata.get("angle", 0)
+            weapon_name = pdata.get("weapon", weapon_names[0])
+            # Výběr textury hráče (červená/modrá podle týmu, pokud je info)
+            texture_to_draw = player_texture
+            # (Pokud chcete rozlišovat týmy, přidejte zde logiku podle pdata.get("team"))
+            rotated_texture = pygame.transform.rotate(texture_to_draw, -angle)
+            rot_rect = rotated_texture.get_rect(center=(screen_x, screen_y))
+            screen.blit(rotated_texture, rot_rect.topleft)
+            # Vykreslení zbraně
+            if weapon_name in weapon_textures:
+                weapon_info = WEAPONS[weapon_name]
+                weapon_texture = weapon_textures[weapon_name]
+                angle_rad = math.radians(angle - 90)
+                offset_distance = weapon_info["offset_x"]
+                weapon_offset_x = math.cos(angle_rad) * offset_distance
+                weapon_offset_y = math.sin(angle_rad) * offset_distance
+                weapon_x = screen_x + weapon_offset_x
+                weapon_y = screen_y + weapon_offset_y
+                rotated_weapon = pygame.transform.rotate(weapon_texture, -angle)
+                weapon_rect = rotated_weapon.get_rect(center=(weapon_x, weapon_y))
+                screen.blit(rotated_weapon, weapon_rect.topleft)
 
     # --- Vykreslení projektilů ostatních hráčů ---
     for p in projectiles:
-        # Projektily jsou již globální, vykreslují se pro všechny hráče
         screen_x = int(p["x"] - camera_x + SCREEN_WIDTH // 2)
         screen_y = int(p["y"] - camera_y + SCREEN_HEIGHT // 2)
         pygame.draw.circle(screen, p["color"], (screen_x, screen_y), p["radius"])
@@ -619,6 +597,9 @@ async def game_loop():
                             # Zpracování broadcastu projektilu od jiných hráčů
                             if "projectile_broadcast" in data:
                                 p = data["projectile_broadcast"]
+                                # Pokud je projektil od nás, ignorujeme (už jsme ho přidali lokálně)
+                                if p.get("owner") == my_id:
+                                    continue
                                 projectile = {
                                     "x": p["x"],
                                     "y": p["y"],
