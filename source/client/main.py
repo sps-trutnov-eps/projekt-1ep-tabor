@@ -446,6 +446,7 @@ async def game_loop():
     global players, players_interpolated, players_prev, connected, status
     global x, y, player_x, player_y, my_id, response_time, last_update_time, is_moving
     global player_angle, current_weapon, weapon_cooldowns
+    global sprint_active, sprint_timer, PLAYER_SPEED 
 
     # Připojení k serveru
     try:
@@ -513,10 +514,14 @@ async def game_loop():
                     moved = (dx != 0 or dy != 0)
                     is_moving = moved
                     
+                    if moved:
+                        move_player(dx, dy)
+                        update_powerups()
+                    
                     def update_powerups():
                         global sprint_active, sprint_timer
                         
-                        player_rect = pygame.Rect(player_x - player_radius, player_y - playeer_radius,
+                        player_rect = pygame.Rect(player_x - player_radius, player_y - player_radius,
                                                   player_radius * 2, player_radius * 2)
                     
                         for power_up in power_ups:
@@ -528,6 +533,15 @@ async def game_loop():
                                     print("Sprint aktivován!")
                                 power_up.active = False
                                 power_ups.remove(power_up)
+                                
+                    
+                    
+                    if sprint_active:
+                        sprint_timer -= 1
+                        if sprint_timer <= 0:
+                            sprint_active = False
+                            PLAYER_SPEED = BASE_SPEED
+                            print("Sprint skončil")
                     
                     # Provedení pohybu
                     if moved:
