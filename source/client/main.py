@@ -102,6 +102,7 @@ players = {}      # Data o hráčích ze serveru
 players_interpolated = {}  # Data o hráčích pro vykreslení (interpolovaná)
 players_prev = {}  # Předchozí pozice hráčů pro interpolaci
 my_id = None      # ID našeho hráče přidělené serverem
+holding_flag = False
 connected = False
 status = "Připojování..."
 response_time = None  # Proměnná pro měření odezvy serveru
@@ -576,6 +577,11 @@ def calculate_angle_to_mouse(player_screen_center_x, player_screen_center_y):
     # a tomu, jak Pygame.transform.rotate interpretuje úhly (proti směru hodinových ručiček).
     angle_degrees = math.degrees(math.atan2(delta_y, delta_x)) + 90 
     return angle_degrees
+
+def is_near_flag():
+    """Vrátí True, pokud je hráč dost blízko vlajce pro sebrání."""
+    distance = math.hypot(player_x - flag_px, player_y - flag_py)
+    return distance < 50  # vzdálenost v pixelech
 
 def shoot(weapon_name_arg):
     """Zpracuje střelbu ze zbraně."""
