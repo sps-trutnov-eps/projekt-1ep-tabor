@@ -538,8 +538,14 @@ async def game_loop():
                                                   player_radius * 2, player_radius * 2)
                     
                         for power_up in power_ups:
-                            player_rect = pygame.Rect(player_x - player_radius, player_y - player_radius, player_radius * 2, player_radius * 2)
-                            if power_up.active and power_up.rect.colliderect(player_x, player_y):
+                            player_rect = pygame.Rect(
+                                int(player_x - player_radius),
+                                int(player_y - player_radius),
+                                int(player_radius * 2),
+                                int(player_radius * 2)
+                            )
+                            
+                            if power_up.active and power_up.rect.colliderect(player_rect):
                                 if power_up.effect_type == "sprint":
                                     sprint_active = True
                                     sprint_timer = power_up.duration * 60
