@@ -1,6 +1,6 @@
-# Multiplayer CTF Herní Klient
+# Tábor - Herní Klient
 
-Tento projekt obsahuje multiplayer herního klienta pro hru typu Capture The Flag (CTF) s mapovým prostředím, zbraňovým systémem a síťovou komunikací. Aplikace umožňuje pohyb hráče v herním prostředí, používání různých zbraní a zobrazuje ostatní připojené hráče v reálném čase.
+Tento projekt obsahuje klientskou část multiplayerové hry "Tábor" - bojové hry s prvky PvE v prostředí letního tábora. Aplikace kombinuje mapové prostředí, pokročilý zbraňový systém, systém zdraví a síťovou komunikaci pro více hráčů současně.
 
 ## Serverová architektura
 
@@ -55,40 +55,58 @@ SERVER_URL = "wss://projekt-1ep-tabor.onrender.com/ws"
 
 ## Soubory projektu
 
-- `main.py` - Hlavní herní soubor, který kombinuje všechny funkce (mapu, zbraně a síťovou komunikaci)
+- `main.py` - Hlavní herní soubor obsahující celou implementaci hry
 - `wake_up.py` - Utilita pro probuzení serveru hostovaného v cloudu
-- `client.py` - Původní jednoduchý síťový klient (pouze pro referenci)
-- `mapa.py` - Původní samostatný modul mapy (pouze pro referenci)
-- `zbrane.py` - Původní samostatný modul zbraní (pouze pro referenci)
+- `items/medkit.py` - Modul pro správu medkitů a PvE prvků
+- `images/` - Složka s texturami zbraní, hráčů a předmětů
+- `requirements.txt` - Seznam Python závislostí
 
 ## Ovládání
 
-- Pohyb hráče: šipky nebo klávesy WASD
-- Střelba: levé tlačítko myši
-- Změna zbraně: kolečko myši nahoru/dolů
-- Otáčení: pohyb myší (hráč se otáčí směrem k myši)
-- Ukončení hry: ESC nebo zavření okna
+- **Pohyb hráče**: Šipky nebo klávesy WASD
+- **Střelba**: Levé tlačítko myši
+- **Změna zbraně**: Kolečko myši nahoru/dolů
+- **Otáčení**: Pohyb myší (hráč se automaticky otáčí směrem k kurzoru)
+- **Sběr medkitů**: Automatický při doteku
+- **Ukončení hry**: ESC nebo zavření okna
 
 ## Funkce hry
 
-1. **Herní mapa**: Prostorná mapa s okrajovými hranicemi a podporou pro objekty
-2. **Systém zbraní**: Výběr z několika zbraní s různými vlastnostmi
-3. **Multiplayer**: Zobrazení ostatních hráčů v reálném čase
-4. **Plynulý pohyb**: Implementace interpolace zajišťuje plynulý pohyb hráčů na obrazovce
-5. **Kolizní systém**: Detekce kolizí s hranicemi mapy a objekty
-6. **Měření odezvy**: Klient zobrazuje aktuální latenci komunikace se serverem
-7. **Zobrazení FPS**: Pro monitorování výkonu aplikace
+1. **Herní mapa**: Prostorná 2D mapa s okrajovými hranicemi, vodicí mřížkou a podporou pro objekty a textury
+2. **Pokročilý systém zbraní**: Výběr ze 4 různých zbraní s unikátními vlastnostmi a projektily
+3. **Multiplayerová komunikace**: Zobrazení ostatních hráčů v reálném čase s plynulou interpolací pohybu
+4. **Projektilový systém**: Vizuálně odlišené projektily pro každou zbraň s různými vlastnostmi
+5. **PvE prvky**: Systém medkitů pro obnovu zdraví rozptýlených po mapě
+6. **Kolizní systém**: Detekce kolizí s hranicemi mapy, objekty a předměty
+7. **Síťová optimalizace**: Měření odezvy serveru a inteligentní keep-alive komunikace
+8. **Diagnostické informace**: Zobrazení FPS, pozice hráče, stavu připojení a dalších užitečných dat
+9. **Pokrovilé ovládání**: Plynulé otáčení směrem k myši, přepínání zbraní kolečkem myši
 
-## Zbraňový systém
+## Zbraňový a projektilový systém
 
-Hra obsahuje tyto zbraně:
+Hra obsahuje 4 unikátní zbraně s různými taktikami použití:
 
-- **Kuše (Crossbow)**: Střední poškození, rychlá kadence
-- **Raketomet (Rocket Launcher)**: Vysoké poškození, pomalá kadence
-- **Brokovnice (Shotgun)**: Střední poškození, střední kadence
-- **Odstřelovačka (Sniper)**: Velmi vysoké poškození, velmi pomalá kadence
+- **Kuše (Crossbow)**: 
+  - Poškození: 25 HP
+  - Cooldown: 30 snímků (~0.5s)
+  - Projektily: Žluté, rychlé, střední dosah
+  
+- **Raketomet (Rocket Launcher)**: 
+  - Poškození: 50 HP  
+  - Cooldown: 60 snímků (~1s)
+  - Projektily: Oranžové, pomalé, dlouhý dosah, velké
 
-Každá zbraň má svůj cooldown (doba mezi výstřely) a damage (poškození).
+- **Brokovnice (Shotgun)**: 
+  - Poškození: 35 HP
+  - Cooldown: 45 snímků (~0.75s) 
+  - Projektily: Bílé, velmi rychlé, krátký dosah
+
+- **Odstřelovačka (Sniper)**: 
+  - Poškození: 75 HP
+  - Cooldown: 90 snímků (~1.5s)
+  - Projektily: Cyan, nejrychlejší, nejdelší dosah, malé
+
+Každá zbraň má vlastní vizuální projektily s realistickými balistickými vlastnostmi.
 
 ## Síťová komunikace
 
@@ -98,14 +116,25 @@ Klient komunikuje se serverem pomocí WebSocket protokolu, což poskytuje:
 - Nízkou latenci
 - Efektivní přenos dat
 
-### Frekvence komunikace
+## PvE prvky a herní mechaniky
 
-- **Odesílání dat**:
-  - Při pohybu hráče
-  - Periodicky každých 100 ms jako "keep-alive" (pro aktualizaci stavu ostatních hráčů)
+### Systém medkitů
+- **Automatické generování**: 5 medkitů náhodně umístěných po mapě
+- **Sběr**: Automatický při kolizi s hráčem (+10 zdraví)
+- **Respawn**: Medkity se po sebrání přesunou na nové náhodné pozice
+- **Vizuální označení**: Červené kříže s bílým pozadím
 
-- **Přijímání dat**:
-  - Průběžně v každé iteraci herní smyčky s timeoutem 10 ms
+### Herní svět
+- **Velikost mapy**: 100x100 dlaždic (4000x4000 pixelů)
+- **Hranice**: Neprůchodné okraje s postupným ztmavováním
+- **Vodicí mřížka**: Vizuální pomůcka pro orientaci na mapě
+- **Kamera**: Sleduje hráče s plynulým pohybem
+
+### Teknické detaily
+- **Engine**: Pygame 2.5.2
+- **Framerate**: 60 FPS
+- **Rozlišení**: 800x600 pixelů (fixní)
+- **Síťový protokol**: WebSocket pro real-time komunikaci
 
 ## Probuzení serveru
 

@@ -1,14 +1,16 @@
-# Návod k použití herního serveru
+# Tábor - Herní Server
 
-Toto je jednoduchý WebSocket server pro multiplayerovou hru, navržený pro hostování na platformě Render.com. Server umožňuje více hráčům sdílet své pozice v reálném čase.
+Toto je WebSocket server pro multiplayerovou bojovou hru "Tábor" s prvky PvE. Server je navržený pro hostování na platformě Render.com a umožňuje více hráčům komunikovat v reálném čase, sdílet pozice, úhly natočení, zbraně a projektily.
 
 ## Funkce
 
-- WebSocket komunikace pro přenos dat v reálném čase
-- HTTP server pro monitoring a zdravotní kontroly
-- Automatické přiřazení ID každému hráči
-- Sdílení pozic všech hráčů
-- Robustní zpracování chyb a odpojení klientů
+- **WebSocket komunikace** pro přenos dat v reálném čase
+- **HTTP server** pro monitoring a zdravotní kontroly  
+- **Automatické přiřazení ID** každému hráči při připojení
+- **Správa herních dat**: pozice (x,y), úhel natočení, aktuální zbraň
+- **Broadcast projektilů** mezi všemi připojenými hráči
+- **Robustní zpracování chyb** a odpojení klientů
+- **Úklid dat** při odpojení hráčů
 
 ## Lokální spuštění
 
