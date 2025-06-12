@@ -37,13 +37,40 @@ BLUE = (0, 0, 255)
 WHITE = (255, 255, 255)
 YELLOW = (255, 255, 0)
 
+class PowerUp:
+    def __init__(self, x, y, image_path, effect_type, duration = 20):
+        self.x = x
+        self.y = y
+        try:    
+            self.image = pygame.image.load(image_path).convert_alpha()
+            self.image = pygame.transform.scale(self.image, (TILE_SIZE, TILE_SIZE))
+        except:
+            self.image = pygame.Surface((TILE_SIZE, TILE_SIZE))
+            self.image.fill((255, 255, 0))
+        
+        self.rect = self.image.get_rect(center=(x, y))
+        self.effect_type = effect_type
+        self.duration = duration
+        self.active = True
+    
+    def draw(self, screen, camera_x, camera_y):
+        if not self.active:
+            return
+        screen_x = int(self.x - camera_x + SCREEN_WIDTH // 2)
+        screen_y = int(self.y - camera_y + SCREEN_WIDTH // 2)
+        screen.blit(self.image, (screen_x - TILE_SIZE // 2, screen_y - TILE_SIZE // 2))
+    
+    
+        
+
 # Konstanty pro herní mapu
 TILE_SIZE = 40
 BOUNDARY_WIDTH = 5
 MAP_WIDTH = 100
 MAP_HEIGHT = 100
 PLAYER_SIZE_MULTIPLIER = 2.5
-PLAYER_SPEED = 4
+BASE_SPEED = 4
+PLAYER_SPEED = BASE_SPEED
 
 # Weapons configuration
 WEAPONS = {
@@ -119,6 +146,9 @@ weapon_names = list(WEAPONS.keys())
 current_weapon = weapon_names[current_weapon_index]
 weapon_cooldowns = {name: 0 for name in WEAPONS}
 medkit_amount = 5 # celkový počet medkitů na mapě
+power_ups = []
+sprint_active = False
+sprint_timer = 0
 
 # Inicializace hráče
 x = random.randint(50, SCREEN_WIDTH-50)  # Inicializace pro klienta
@@ -307,6 +337,36 @@ def vypocitej_tmavost_hranice(x_tile, y_tile):
         return (0, g_hodnota, 0)
     else:
         return DARKER_GREEN # Vnější hranice
+
+def draw_flag(screen, camera_x, camera_y, time_elapsed):
+    if flag_taken:
+        return
+    
+    # Výpočet pozice na obrazovce
+    screen_x = int(flag_px - camera_x + SCREEN_WIDTH // 2)
+    screen_y = int(flag_py - camera_y + SCREEN_HEIGHT // 2)
+    
+    # Zvětšené parametry vlajky
+    scale = 2.0  # <- Zmenšit podle potřeby (1.5 = 150 %, 2.0 = 200 % atd.)
+    flag_height = int(30 * scale)
+    pole_radius = int(10 * scale)
+    flag_length = int(40 * scale)
+    wave_offset = 5 * math.sin(time_elapsed * 2) * scale
+    
+    # Výpočet bodů trojúhelníkové vlajky
+    flag_points = [
+        (screen_x, screen_y - 5),  # Bod u tyče
+        (screen_x + flag_length, screen_y - 15 - wave_offset),
+        (screen_x, screen_y - flag_height - 3 * math.sin(time_elapsed * 2) * scale)
+    ]
+    
+    # Tyč (kruh + čára)
+    pygame.draw.circle(screen, (220, 50, 50), (screen_x, screen_y), pole_radius)
+    pygame.draw.line(screen, BLACK, (screen_x, screen_y), (screen_x, screen_y - flag_height - 10))
+    
+    # Vlajka
+    pygame.draw.polygon(screen, (220, 50, 50), flag_points)
+    pygame.draw.polygon(screen, BLACK, flag_points, 2)
 
 def draw_map(screen_surface, camera_center_x_map, camera_center_y_map):
     """Vykreslí mapu s ohledem na pozici kamery a screen shake."""
@@ -629,6 +689,10 @@ async def game_loop():
     # Globální proměnné pro katastrofy, které se zde modifikují nebo čtou
     global active_catastrophe, catastrophe_start_time, catastrophe_duration
     global last_catastrophe_trigger_time, catastrophe_interval, screen_shake_offset
+    global sprint_active, sprint_timer, PLAYER_SPEED
+    global sprint_respawn_timer
+    
+    
 
     # Inicializace časovače pro automatické katastrofy, aby nezačala hned
     last_catastrophe_trigger_time = time.time()
@@ -648,9 +712,19 @@ async def game_loop():
                 last_update_time = time.time()
 
                 game_is_running = True
+                sprint_respawn_timer = time.time()
                 while game_is_running:
+                    current_time = time.time()
                     current_loop_time = time.time()
                     should_shoot_this_frame = False # Reset na začátku každého snímku
+                    if current_time - sprint_respawn_timer >= 2:
+                        sprint_respawn_timer = current_time
+                        spawn_x = random.randint(BOUNDARY_WIDTH + 1, MAP_WIDTH - BOUNDARY_WIDTH - 2) * TILE_SIZE
+                        spawn_y = random.randint(BOUNDARY_WIDTH + 1, MAP_HEIGHT - BOUNDARY_WIDTH - 2) * TILE_SIZE
+                        sprint = PowerUp(spawn_x, spawn_y, "images/sprint.png", "sprint", duration=5)
+                        power_ups.append(sprint)
+                        print("Nový sprint power-up přidán!")
+                    current_time = time.time()
 
                     # Zpracování událostí (vstupy od uživatele)
                     for event in pygame.event.get():
@@ -665,6 +739,15 @@ async def game_loop():
                             elif event.key == pygame.K_k: # Manuální spuštění katastrofy
                                 print("Klávesa K stisknuta - pokus o spuštění katastrofy.")
                                 start_new_random_catastrophe()
+                        if event.type == pygame.QUIT or (event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE):
+                            running = False
+                        elif event.type == pygame.KEYDOWN and event.key == pygame.K_t:
+                            player_tile_x, player_tile_y = get_player_tile_position()
+                            add_image("images/tree1.png", player_tile_x + 2, player_tile_y + 2, 2.0)
+                        elif event.type == pygame.KEYDOWN and event.key == pygame.K_p:
+                            tile_x, tile_y = get_player_tile_position()
+                            sprint = PowerUp(spawn_x, spawn_y, "images/sprint.png", "sprint", duration=5)
+                            power_ups.append(sprint)
                         elif event.type == pygame.MOUSEBUTTONDOWN:
                             if event.button == 1: # Levé tlačítko myši - střelba
                                 if shoot(current_weapon):
@@ -674,6 +757,14 @@ async def game_loop():
                             elif event.button == 5: # Kolečko myši dolů
                                 change_weapon(-1) # Předchozí zbraň
 
+                    keys = pygame.key.get_pressed()
+                    dx, dy = 0, 0
+                    if sprint_active:
+                        sprint_timer -= 1
+                        if sprint_timer <=0:
+                            sprint_active = False
+                            PLAYER_SPEED = BASE_SPEED
+                    current_speed = PLAYER_SPEED
                     # Pohyb hráče
                     pressed_keys = pygame.key.get_pressed()
                     movement_dx_map = 0; movement_dy_map = 0 # Změna pozice na mapě
@@ -690,6 +781,8 @@ async def game_loop():
                     is_moving = (movement_dx_map != 0 or movement_dy_map != 0)
                     if is_moving:
                         move_player(movement_dx_map, movement_dy_map)
+                    
+                            
 
                     # Natočení hráče vůči myši (hráč je pro tento výpočet vždy ve středu obrazovky)
                     player_angle = calculate_angle_to_mouse(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2)
@@ -738,6 +831,75 @@ async def game_loop():
                         if screen_shake_offset != (0,0) : screen_shake_offset = (0, 0)
                     # --- Konec Logiky Katastrof ---
 
+                    # Aktualizace stavu pohybu
+                    moved = (dx != 0 or dy != 0)
+                    is_moving = moved
+                    
+                    if moved:
+                        move_player(dx, dy)
+                        update_powerups()
+                    
+                    def update_powerups():
+                        global sprint_active, sprint_timer
+                        
+                        player_rect = pygame.Rect(player_x - player_radius, player_y - player_radius,
+                                                  player_radius * 2, player_radius * 2)
+                    
+                        for power_up in power_ups:
+                            player_rect = pygame.Rect(
+                                int(player_x - player_radius),
+                                int(player_y - player_radius),
+                                int(player_radius * 2),
+                                int(player_radius * 2)
+                            )
+                            
+                            if power_up.active and power_up.rect.colliderect(player_rect):
+                                if power_up.effect_type == "sprint":
+                                    sprint_active = True
+                                    sprint_timer = power_up.duration * 60
+                                    PLAYER_SPEED = BASE_SPEED * 2
+                                    print("Sprint aktivován!")
+                                power_up.active = False
+                                power_ups.remove(power_up)
+                                
+                    
+                    
+                    if sprint_active:
+                        sprint_timer -= 1
+                        if sprint_timer <= 0:
+                            sprint_active = False
+                            PLAYER_SPEED = BASE_SPEED
+                            print("Sprint skončil")
+                    
+                    # Provedení pohybu
+                    if moved:
+                        move_player(dx, dy)
+                        update_powerups()
+
+                    # Výpočet úhlu mezi hráčem a kurzorem myši
+                    player_screen_x = int(SCREEN_WIDTH // 2)
+                    player_screen_y = int(SCREEN_HEIGHT // 2)
+                    player_angle = calculate_angle_to_mouse(player_screen_x, player_screen_y)
+                    
+                    # Aktualizace cooldownů zbraní
+                    for weapon in weapon_cooldowns:
+                        if weapon_cooldowns[weapon] > 0:
+                            weapon_cooldowns[weapon] -= 1
+                    
+                    if sprint_active:
+                        PLAYER_SPEED = BASE_SPEED * 2
+                        sprint_timer -= 1
+                        if sprint_timer <= 0:
+                            sprint_active = False
+                            PLAYER_SPEED = BASE_SPEED
+
+                    # Posílání dat serveru (při pohybu nebo po uplynutí intervalu)
+                    if moved or current_time - last_update_time >= UPDATE_INTERVAL:
+                        start_time = time.time()
+                        await ws_connection.send_json({"x": x, "y": y})
+                        last_update_time = current_time
+                    
+                    # Přijímání dat od serveru (non-blocking)
                     # Posílání dat na server (pozice, úhel, barva, případně projektil)
                     if is_moving or should_shoot_this_frame or (current_loop_time - last_update_time >= UPDATE_INTERVAL):
                         time_before_send = time.time()
@@ -859,13 +1021,33 @@ async def game_loop():
                             else:
                                 # Nový hráč nebo chybí předchozí data, použijeme aktuální data ze serveru
                                 current_interpolated_state[server_pid] = [net_x_from_server, net_y_from_server, angle_from_server, color_list_from_server]
-                    players_interpolated = current_interpolated_state
+                                players_interpolated = current_interpolated_state
+                                # Pokud nemáme předchozí pozici, použijeme aktuální
+                                players_interpolated[player_id] = pos
+                    
 
+                    # Vykreslení
+                    draw_map(screen, player_x, player_y)
+                    draw_player(screen, player_x, player_y)
+                    draw_other_players(screen, player_x, player_y)
+                    
+                    for power_up in power_ups:
+                        if power_up.active:
+                            power_up.draw(screen, player_x, player_y)
+                    
+                    # Vykreslení UI
+                    draw_ui(screen, font)
+                    
+                    # FPS počítadlo
+                    fps = clock.get_fps()
+                    fps_text = font.render(f"FPS: {fps:.1f}", True, YELLOW)
+                    screen.blit(fps_text, (600, 10))
 
                     # --- Vykreslování ---
                     # Kamera je vždy zaměřena na našeho hráče (player_x, player_y jsou mapové souřadnice)
                     # Efekt třesení (screen_shake_offset) se aplikuje uvnitř jednotlivých vykreslovacích funkcí.
-                    draw_map(screen, player_x, player_y) 
+                    draw_map(screen, player_x, player_y)
+                    draw_flag(screen, player_x, player_y, pygame.time.get_ticks() / 1000.0)
                     draw_other_players(screen, player_x, player_y) # Ostatní hráči se kreslí relativně ke kameře
                     draw_player(screen, player_x, player_y) # Náš hráč (kreslený ve středu obrazovky + shake)
                     
