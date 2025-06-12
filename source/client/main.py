@@ -446,7 +446,10 @@ async def game_loop():
     global players, players_interpolated, players_prev, connected, status
     global x, y, player_x, player_y, my_id, response_time, last_update_time, is_moving
     global player_angle, current_weapon, weapon_cooldowns
-    global sprint_active, sprint_timer, PLAYER_SPEED 
+    global sprint_active, sprint_timer, PLAYER_SPEED
+    global sprint_respawn_timer
+    
+    
 
     # Připojení k serveru
     try:
@@ -462,7 +465,17 @@ async def game_loop():
 
                 # Hlavní herní smyčka
                 running = True
+                sprint_respawn_timer = time.time()
                 while running:
+                    current_time = time.time()
+                    
+                    if current_time - sprint_respawn_timer >= 2:
+                        sprint_respawn_timer = current_time
+                        spawn_x = random.randint(BOUNDARY_WIDTH + 1, MAP_WIDTH - BOUNDARY_WIDTH - 2) * TILE_SIZE
+                        spawn_y = random.randint(BOUNDARY_WIDTH + 1, MAP_HEIGHT - BOUNDARY_WIDTH - 2) * TILE_SIZE
+                        sprint = PowerUp(spawn_x, spawn_y, "images/sprint.png", "sprint", duration=5)
+                        power_ups.append(sprint)
+                        print("Nový sprint power-up přidán!")
                     current_time = time.time()
                     
                     
@@ -476,7 +489,7 @@ async def game_loop():
                             add_image("images/tree1.png", player_tile_x + 2, player_tile_y + 2, 2.0)
                         elif event.type == pygame.KEYDOWN and event.key == pygame.K_p:
                             tile_x, tile_y = get_player_tile_position()
-                            sprint = PowerUp(tile_x * TILE_SIZE, tile_y * TILE_SIZE, "images/sprint.png", "sprint", duration=5)
+                            sprint = PowerUp(spawn_x, spawn_y, "images/sprint.png", "sprint", duration=5)
                             power_ups.append(sprint)
                         elif event.type == pygame.MOUSEBUTTONDOWN:
                             # Levé tlačítko myši pro střelbu
@@ -525,7 +538,8 @@ async def game_loop():
                                                   player_radius * 2, player_radius * 2)
                     
                         for power_up in power_ups:
-                            if power_up.active and power_up.rect.collidepoint(player_x, player_y):
+                            player_rect = pygame.Rect(player_x - player_radius, player_y - player_radius, player_radius * 2, player_radius * 2)
+                            if power_up.active and power_up.rect.colliderect(player_x, player_y):
                                 if power_up.effect_type == "sprint":
                                     sprint_active = True
                                     sprint_timer = power_up.duration * 60
