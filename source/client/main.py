@@ -671,9 +671,9 @@ async def game_loop():
     global last_catastrophe_trigger_time, catastrophe_interval, screen_shake_offset
     
     scooter = Scooter(
-    MAP_WIDTH // 2 * TILE_SIZE + 100,  # Pozice vedle středu mapy
-    MAP_HEIGHT // 2 * TILE_SIZE + 100
-)
+        MAP_WIDTH // 2 * TILE_SIZE + 100,  # Pozice vedle středu mapy
+        MAP_HEIGHT // 2 * TILE_SIZE + 100
+    )
 
     # Inicializace časovače pro automatické katastrofy, aby nezačala hned
     last_catastrophe_trigger_time = time.time()
@@ -966,18 +966,14 @@ async def game_loop():
                                 current_interpolated_state[server_pid] = [net_x_from_server, net_y_from_server, angle_from_server, color_list_from_server]
                     players_interpolated = current_interpolated_state
 
+                    # --- Vykreslování ---
+                    # Kamera je vždy zaměřena na našeho hráče (player_x, player_y jsou mapové souřadnice)
+                    # Efekt třesení (screen_shake_offset) se aplikuje uvnitř jednotlivých vykreslovacích funkcí.
                     draw_map(screen, player_x, player_y)
                     
                     if scooter:
                         scooter.draw(screen, player_x, player_y)
-                        
-                    draw_player(screen, player_x, player_y)
-                    draw_other_players(screen, player_x, player_y)
-
-                    # --- Vykreslování ---
-                    # Kamera je vždy zaměřena na našeho hráče (player_x, player_y jsou mapové souřadnice)
-                    # Efekt třesení (screen_shake_offset) se aplikuje uvnitř jednotlivých vykreslovacích funkcí.
-                    draw_map(screen, player_x, player_y) 
+                    
                     draw_other_players(screen, player_x, player_y) # Ostatní hráči se kreslí relativně ke kameře
                     draw_player(screen, player_x, player_y) # Náš hráč (kreslený ve středu obrazovky + shake)
                     
