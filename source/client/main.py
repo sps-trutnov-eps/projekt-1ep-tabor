@@ -866,7 +866,7 @@ async def game_loop():
                     # Posílání dat serveru (při pohybu nebo po uplynutí intervalu)
                     if moved or current_time - last_update_time >= UPDATE_INTERVAL:
                         start_time = time.time()
-                        await ws.send_json({"x": x, "y": y})
+                        await ws_connection.send_json({"x": x, "y": y})
                         last_update_time = current_time
                     
                     # Přijímání dat od serveru (non-blocking)
@@ -991,7 +991,7 @@ async def game_loop():
                             else:
                                 # Nový hráč nebo chybí předchozí data, použijeme aktuální data ze serveru
                                 current_interpolated_state[server_pid] = [net_x_from_server, net_y_from_server, angle_from_server, color_list_from_server]
-                    players_interpolated = current_interpolated_state
+                                players_interpolated = current_interpolated_state
                                 # Pokud nemáme předchozí pozici, použijeme aktuální
                                 players_interpolated[player_id] = pos
                     
