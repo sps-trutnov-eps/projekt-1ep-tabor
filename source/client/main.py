@@ -550,6 +550,7 @@ grenades = []
 generate_grenades(grenade_amount, TILE_SIZE, MAP_WIDTH, MAP_HEIGHT, BOUNDARY_WIDTH, grenades=grenades)
 
 thrown_grenades = []
+network_grenades = {}
 
 # Funkce pro změnu zbraně
 def change_weapon(direction):
@@ -655,12 +656,22 @@ async def game_loop():
                                     speed = 8  # síla hodu granátu
                                     grenade_velocity_x = speed * (grenade_dx / grenade_distance)
                                     grenade_velocity_y = speed * (grenade_dy / grenade_distance)
-                                    thrown_grenade = throw_grenade(grenade_velocity_x, grenade_velocity_y, player_grenades_amount,
-                                                                    player_x, player_y, player_size)
+                                    
+                                    thrown_grenade, grenade_id = throw_grenade(grenade_velocity_x, grenade_velocity_y, player_grenades_amount,
+                                                                    player_x, player_y, player_size, my_id)
                                     if thrown_grenade:
                                         thrown_grenades.append(thrown_grenade)
                                         add_grenades(-1)
                                         player_last_grenade_time = current_time
+                                        
+                                        send_grenade_data = {
+                                            "id": grenade_id,
+                                            "x": thrown_grenade.x,
+                                            "y": thrown_grenade.y,
+                                            "velocity_x": thrown_grenade.velocity_x,
+                                            "velocity_y": thrown_grenade.velocity_y,
+                                            "owner": my_id
+                                        }
 
                     is_moving = dx != 0 or dy != 0
                     if is_moving:
@@ -699,6 +710,11 @@ async def game_loop():
                                 "last_used": player_last_grenade_time
                                 }
                             }
+                        
+                        if 'send_grenade_data' in locals():
+                            message["thrown_grenade"] = send_grenade_data
+                            del send_grenade_data
+                            
                         if shoot_this_frame and len(projectiles) > 0:
                             last = projectiles[-1]
                             message["projectile"] = {
@@ -736,6 +752,42 @@ async def game_loop():
                                 }
                                 projectiles.append(projectile)
                                 continue
+                            
+                            if "grenade_broadcast" in data:
+                                grenade_data = data["grenade_broadcast"]
+                                # Pokud je granát od nás, ignorujeme (už jsme ho přidali lokálně)
+                                if grenade_data.get("owner") == my_id:
+                                    continue
+                                
+                                # Vytvoření granátu od jiného hráče
+                                grenade_id = grenade_data["id"]
+                                network_grenade = Grenade_projectile(
+                                    grenade_data["x"], 
+                                    grenade_data["y"],
+                                    grenade_data["velocity_x"],
+                                    grenade_data["velocity_y"],
+                                    grenade_id=grenade_id
+                                )
+                                network_grenades[grenade_id] = network_grenade
+                                continue
+                            
+                            if "grenade_updates" in data:
+                                for grenade_id, grenade_state in data["grenade_updates"].items():
+                                    if grenade_id in network_grenades:
+                                        grenade = network_grenades[grenade_id]
+                                        grenade.x = grenade_state["x"]
+                                        grenade.y = grenade_state["y"]
+                                        grenade.state = grenade_state["state"]
+                                        if grenade_state["state"] == "exploded":
+                                            grenade.explosion_time = pygame.time.get_ticks()
+                                            # Zkontroluj damage pro naše hráče
+                                            distance = math.sqrt((grenade.x - player_x) ** 2 + (grenade.y - player_y) ** 2)
+                                            if distance <= grenade.explosion_radius:
+                                                # Vypočítej damage na základě vzdálenosti
+                                                damage_factor = 1.0 - (distance / grenade.explosion_radius)
+                                                damage = int(grenade.explosion_damage * damage_factor)
+                                                take_damage(damage)
+
                             # Zpracování pozic hráčů
                             players_prev = players_interpolated.copy() if players_interpolated else {}
                             players = data
@@ -803,11 +855,21 @@ async def game_loop():
                     for grenade_inst in grenades:
                         grenade_inst.draw(screen, player_x, player_y, SCREEN_WIDTH, SCREEN_HEIGHT)
 
-                    for thrown_grenade in thrown_grenades:
+                    for thrown_grenade in list(thrown_grenades):
                         thrown_grenade.update(player_x, player_y, player_size, SCREEN_WIDTH, SCREEN_HEIGHT, take_damage)
-                        thrown_grenade.draw(screen, player_x, player_y, player_size, SCREEN_WIDTH, SCREEN_HEIGHT)
                         if thrown_grenade.state == 'exploded' and pygame.time.get_ticks() - thrown_grenade.explosion_time > 500:
                             thrown_grenades.remove(thrown_grenade)
+                    
+                    for grenade_id, network_grenade in list(network_grenades.items()):
+                        network_grenade.update(player_x, player_y, player_size, SCREEN_WIDTH, SCREEN_HEIGHT, take_damage)
+                        if network_grenade.state == 'exploded' and pygame.time.get_ticks() - network_grenade.explosion_time > 500:
+                            del network_grenades[grenade_id]
+                    
+                    for thrown_grenade in thrown_grenades:
+                        thrown_grenade.draw(screen, player_x, player_y, player_size, SCREEN_WIDTH, SCREEN_HEIGHT)
+
+                    for network_grenade in network_grenades.values():
+                        network_grenade.draw(screen, player_x, player_y, player_size, SCREEN_WIDTH, SCREEN_HEIGHT)
 
                     # Projektily
                     for p in projectiles:

@@ -1,6 +1,7 @@
 import pygame
 import math
 import random
+import time
 
 BLACK = (0, 0, 0)
 EXPLOSION_COLOR = (255, 0, 0)
@@ -33,7 +34,7 @@ class Grenade:
         return pygame.Rect(self.x - self.size // 2, self.y - self.size // 2, self.size, self.size)
     
 class Grenade_projectile:
-    def __init__(self, x, y, velocity_x, velocity_y):
+    def __init__(self, x, y, velocity_x, velocity_y, grenade_id=None):
         self.x = x
         self.y = y
         self.velocity_x = velocity_x
@@ -47,6 +48,16 @@ class Grenade_projectile:
         self.explosion_damage = 40
         self.explosion_time = 0
         self.explosion_duration = 500
+        self.grenade_id = grenade_id
+    
+    def get_state_data(self):
+        """Vrátí data o stavu granátu pro synchronizaci"""
+        return {
+            "x": self.x,
+            "y": self.y,
+            "state": self.state,
+            "explosion_time": self.explosion_time if self.state == "exploded" else 0
+        }
 
     def update(self, player_x, player_y, player_size, SCREEN_WIDTH, SCREEN_HEIGHT, take_damage=None):
         if self.state == 'moving':
@@ -119,8 +130,9 @@ def check_grenade_collision(player_x, player_y, player_radius, TILE_SIZE, MAP_WI
             return True
     return False
 
-def throw_grenade(velocity_x, velocity_y, player_grenades_amount, player_x, player_y, player_size):
+def throw_grenade(velocity_x, velocity_y, player_grenades_amount, player_x, player_y, player_size, my_id):
     if player_grenades_amount > 0:
-        thrown_grenade = Grenade_projectile((player_x + player_size / 2), (player_y + player_size / 2), velocity_x, velocity_y)
-        return thrown_grenade
-    return None
+        grenade_id = f"{my_id}_{int(time.time() * 1000)}_{random.randint(1000, 9999)}"
+        thrown_grenade = Grenade_projectile((player_x + player_size / 2), (player_y + player_size / 2), velocity_x, velocity_y, grenade_id=grenade_id)
+        return thrown_grenade, grenade_id
+    return None, None

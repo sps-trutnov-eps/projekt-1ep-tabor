@@ -7,9 +7,57 @@ from aiohttp import web
 PORT = int(os.environ.get("PORT", 5555))
 CLIENTS = {}  # Ukládá připojené hráče ve formátu {id: {...}}
 WEBSOCKET_CONNECTIONS = set()  # Ukládá aktivní WebSocket připojení
+active_grenades = {}
 
 # Generátor ID klientů
 client_id_counter = 0
+
+async def update_grenades():
+    """Pravidelná aktualizace granátů na serveru"""
+    current_time = time.time()
+    updates = {}
+    
+    for grenade_id, grenade in list(active_grenades.items()):
+        if grenade["state"] == "moving":
+            # Aktualizace pozice
+            grenade["x"] += grenade["velocity_x"]
+            grenade["y"] += grenade["velocity_y"]
+            
+            # Kontrola vzdálenosti
+            distance = math.sqrt((grenade["x"] - grenade["start_x"])**2 + 
+                               (grenade["y"] - grenade["start_y"])**2)
+            
+            if distance >= 500:
+                grenade["state"] = "stopped"
+                grenade["stop_time"] = current_time
+                
+        elif grenade["state"] == "stopped":
+            if current_time - grenade["stop_time"] >= 1.0:
+                grenade["state"] = "exploded"
+                grenade["explosion_time"] = current_time
+                
+        elif grenade["state"] == "exploded":
+            if current_time - grenade["explosion_time"] >= 0.5:
+                del active_grenades[grenade_id]
+                continue
+        
+        updates[grenade_id] = {
+            "x": grenade["x"],
+            "y": grenade["y"],
+            "state": grenade["state"]
+        }
+    
+    # Poslání aktualizací všem klientům
+    if updates:
+        broadcast_message = {"grenade_updates": updates}
+        for ws in list(WEBSOCKET_CONNECTIONS):
+            if ws.closed:
+                WEBSOCKET_CONNECTIONS.discard(ws)
+                continue
+            try:
+                await ws.send_json(broadcast_message)
+            except:
+                WEBSOCKET_CONNECTIONS.discard(ws)
 
 async def handle_websocket(request):
     """Zpracování WebSocket připojení přes aiohttp"""
@@ -28,6 +76,12 @@ async def handle_websocket(request):
             "y": 100,
             "angle": 0,
             "weapon": "Crossbow"
+            "health": 100,
+            "alive": True,
+            "grenades": {
+                "amount": 3,
+                "last_used": 0
+            }
         }  # Startovní pozice a výchozí hodnoty
         
         WEBSOCKET_CONNECTIONS.add(ws)
@@ -53,8 +107,46 @@ async def handle_websocket(request):
                         CLIENTS[client_id]["angle"] = data["angle"]
                     if "weapon" in data:
                         CLIENTS[client_id]["weapon"] = data["weapon"]
+                    if "health" in data:
+                        CLIENTS[client_id]["health"] = data["health"]
+                    if "alive" in data:
+                        CLIENTS[client_id]["alive"] = data["alive"]
+                    if "grenades" in data:
+                        CLIENTS[client_id]["grenades"] = data["grenades"]
                     
                     print(f"[UPDATE] Klient {client_id} pozice: ({data['x']}, {data['y']}), angle: {CLIENTS[client_id].get('angle', 0)}, weapon: {CLIENTS[client_id].get('weapon', 'Crossbow')}")
+                    
+                    if "thrown_grenade" in data:
+                        grenade_data = data["thrown_grenade"]
+                        grenade_id = grenade_data["id"]
+                        
+                        # Uložení granátu na server
+                        active_grenades[grenade_id] = {
+                            "x": grenade_data["x"],
+                            "y": grenade_data["y"],
+                            "velocity_x": grenade_data["velocity_x"],
+                            "velocity_y": grenade_data["velocity_y"],
+                            "owner": grenade_data["owner"],
+                            "state": "moving",
+                            "start_time": time.time(),
+                            "start_x": grenade_data["x"],
+                            "start_y": grenade_data["y"]
+                        }
+                        
+                        print(f"[GRENADE] Klient {client_id} hodil granát {grenade_id}")
+                        
+                        # Broadcast granátu všem ostatním klientům
+                        broadcast_message = {
+                            "grenade_broadcast": grenade_data
+                        }
+                        
+                        for other_ws in WEBSOCKET_CONNECTIONS:
+                            if other_ws == ws or other_ws.closed:  # Neposílej zpět odesílateli
+                                continue
+                            try:
+                                await other_ws.send_json(broadcast_message)
+                            except:
+                                WEBSOCKET_CONNECTIONS.discard(other_ws)
                     
                     # Projektily (původní logika zachována)
                     if "projectile" in data:
@@ -108,6 +200,7 @@ async def handle_root(request):
                 .info { background-color: #f8f9fa; padding: 20px; border-radius: 5px; }
                 .status { margin-top: 20px; }
                 .clients { margin-top: 20px; }
+                .grenades { margin-top: 20px; }
             </style>
         </head>
         <body>
@@ -119,6 +212,7 @@ async def handle_root(request):
             <div class="status">
                 <h2>Stav serveru</h2>
                 <p>Počet připojených klientů: <strong>""" + str(len(CLIENTS)) + """</strong></p>
+                <p>Aktivní granáty: <strong>""" + str(len(active_grenades)) + """</strong></p>
             </div>
             <div class="clients">
                 <h2>Aktivní hráči</h2>
@@ -134,8 +228,16 @@ async def handle_status(request):
     status = {
         "clients_count": len(CLIENTS),
         "clients": CLIENTS
+        "active_grenades_count": len(active_grenades),
+        "active_grenades": active_grenades
     }
     return web.json_response(status)
+
+async def start_grenade_updater():
+    """Spustí pravidelný update granátů na pozadí"""
+    while True:
+        await update_grenades()
+        await asyncio.sleep(0.05)
 
 # Nastavení HTTP a WebSocket serveru
 async def init_app():
@@ -143,6 +245,8 @@ async def init_app():
     app.router.add_get('/', handle_root)
     app.router.add_get('/status', handle_status)
     app.router.add_get('/ws', handle_websocket)  # WebSocket endpoint
+    
+    asyncio.create_task(start_grenade_updater())
     
     return app
 
