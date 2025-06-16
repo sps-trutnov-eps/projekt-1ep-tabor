@@ -122,6 +122,7 @@ WEAPONS = {
     }
 }
 
+
 # Globální proměnné pro síťovou komunikaci
 players = {}      # Data o hráčích ze serveru
 players_interpolated = {}  # Data o hráčích pro vykreslení (interpolovaná)
@@ -221,6 +222,14 @@ for weapon in weapon_names:
     except Exception as e:
         print(f'Could not load CHARACTER skin for {weapon} from {path}: {e}')
         SKIN_TEXTURES[weapon] = player_texture  # fallback to default player texture
+
+CLASS_MAX_HP = {
+    "Sniper": 100,
+    "Crossbow": 125,           # Medic
+    "Shotgun": 150,            # Scout
+    "Rocket Launcher": 150     # Soldier
+}
+
 # Načítání zbraní
 weapon_textures = {}
 for name, weapon_info in WEAPONS.items():
@@ -658,17 +667,18 @@ generate_medkits(medkit_amount, TILE_SIZE, MAP_WIDTH, MAP_HEIGHT, BOUNDARY_WIDTH
 
 
 def change_weapon(direction_change):
-    """Změní aktivní zbraň."""
     global current_weapon_index, current_weapon, weapon_names
-    
-    current_weapon_index = (current_weapon_index + direction_change) % len(weapon_names)
-    # Zajistí, že index zůstane v platném rozsahu (pro případ záporného výsledku % v Pythonu)
-    if current_weapon_index < 0:
-        current_weapon_index += len(weapon_names)
-        
-    current_weapon = weapon_names[current_weapon_index]
-    print(f"Zbraň změněna na: {current_weapon}")
+    global max_player_health, player_health
 
+    current_weapon_index = (current_weapon_index + direction_change) % len(weapon_names)
+    current_weapon = weapon_names[current_weapon_index]
+
+    # Set max HP based on class
+    max_player_health = CLASS_MAX_HP.get(current_weapon, 100)
+    # Optionally, heal to full when switching class:
+    player_health = max_player_health
+
+    print(f"Zbraň změněna na {current_weapon} (Max HP: {max_player_health})")
 
 def start_new_random_catastrophe():
     """Spustí novou náhodnou katastrofu, pokud žádná neběží."""
