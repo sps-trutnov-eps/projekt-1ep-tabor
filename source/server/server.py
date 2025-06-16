@@ -5,7 +5,7 @@ from aiohttp import web
 
 # Globální proměnné
 PORT = int(os.environ.get("PORT", 5555))
-CLIENTS = {}  # Ukládá připojené hráče ve formátu {id: (x, y)}
+CLIENTS = {}  # Ukládá připojené hráče ve formátu {id: {...}}
 WEBSOCKET_CONNECTIONS = set()  # Ukládá aktivní WebSocket připojení
 
 # Generátor ID klientů
@@ -23,7 +23,12 @@ async def handle_websocket(request):
     
     try:
         # Registrace nového klienta
-        CLIENTS[client_id] = (100, 100)  # Startovní pozice
+        CLIENTS[client_id] = {
+            "x": 100,
+            "y": 100,
+            "angle": 0,
+            "weapon": "Crossbow"
+        }  # Startovní pozice a výchozí hodnoty
         
         WEBSOCKET_CONNECTIONS.add(ws)
         
@@ -41,13 +46,18 @@ async def handle_websocket(request):
                         await ws.send_json({"error": "Neplatná data, chybí x nebo y"})
                         continue
                     
-                    # Aktualizace pozice
-                    CLIENTS[client_id] = (data["x"], data["y"])
-                    print(f"[UPDATE] Klient {client_id} pozice: ({data['x']}, {data['y']})")
+                    # Aktualizace dat hráče
+                    CLIENTS[client_id]["x"] = data["x"]
+                    CLIENTS[client_id]["y"] = data["y"]
+                    if "angle" in data:
+                        CLIENTS[client_id]["angle"] = data["angle"]
+                    if "weapon" in data:
+                        CLIENTS[client_id]["weapon"] = data["weapon"]
                     
-                    # Aktualizace projektilu
-                    if "projectile" in CLIENTS[client_id]:
-                        # Přepošleme projektil všem klientům (včetně původního)
+                    print(f"[UPDATE] Klient {client_id} pozice: ({data['x']}, {data['y']}), angle: {CLIENTS[client_id].get('angle', 0)}, weapon: {CLIENTS[client_id].get('weapon', 'Crossbow')}")
+                    
+                    # Projektily (původní logika zachována)
+                    if "projectile" in data:
                         for other_ws in WEBSOCKET_CONNECTIONS:
                             if other_ws.closed:
                                 continue
@@ -55,13 +65,13 @@ async def handle_websocket(request):
                                 await other_ws.send_json({
                                     "projectile_broadcast": {
                                         "owner": client_id,
-                                        **CLIENTS[client_id]["projectile"]
+                                        **data["projectile"]
                                     }
                                 })
                             except:
                                 pass
                     
-                    # Posílá zpět všechny pozice hráčů
+                    # Posílá zpět všechny hráče (včetně úhlu a zbraně)
                     await ws.send_json(CLIENTS)
                     
                 except json.JSONDecodeError:

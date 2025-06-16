@@ -46,14 +46,14 @@ def generate_medkits(medkit_amount, TILE_SIZE, MAP_WIDTH, MAP_HEIGHT, BOUNDARY_W
 
 ### Funkce pro kontrolu kolizí mezí hráčem a medkitem
 
-def check_medkit_collision(player_x, player_y, player_radius, TILE_SIZE, MAP_WIDTH, MAP_HEIGHT, BOUNDARY_WIDTH, medkits=[]):
+def check_medkit_collision(player_x, player_y, player_radius, TILE_SIZE, MAP_WIDTH, MAP_HEIGHT, BOUNDARY_WIDTH, heal_player=None, medkits=[]):
     player_rect = pygame.Rect(player_x - player_radius, player_y - player_radius,
                               player_radius * 2, player_radius * 2)
 
     for medkit in medkits:
         if player_rect.colliderect(medkit.get_rect()):
-            # Přidání zdraví (zde byste přidali kód pro zvýšení zdraví hráče)
-            print("+10 životů")
+            # Přidání zdraví
+            heal_player(25)
 
             # Přesunutí medkitu na novou náhodnou pozici
             # Použijeme dlaždice pro lepší umístění (mimo zdi a objekty)
@@ -66,3 +66,5 @@ def check_medkit_collision(player_x, player_y, player_radius, TILE_SIZE, MAP_WID
 
             return True
     return False
+
+
