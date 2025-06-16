@@ -204,19 +204,25 @@ except Exception as e:
     player_texture = player_surface
     print("Použita výchozí textura hráče (placeholder).")
 
+CHARACTER_SKINS = {
+    "Crossbow": "medic.png",
+    "Rocket Launcher": "soldier.png",
+    "Shotgun": "scout.png",
+    "Sniper": "sniper.png"
+}
+
 SKIN_TEXTURES = {}
 for weapon in weapon_names:
-    img_name = WEAPONS[weapon]["image"]
+    img_name = CHARACTER_SKINS.get(weapon, "player.png")  # <--- USE CLASS IMAGE!
     path = os.path.join("images", img_name)
     try:
         SKIN_TEXTURES[weapon] = pygame.transform.scale(
             pygame.image.load(path).convert_alpha(), (player_size, player_size)
         )
-        print(f'Loaded skin for {weapon} from {path}')
+        print(f'Loaded CHARACTER skin for {weapon} from {path}')
     except Exception as e:
-        print(f'Could not load skin for {weapon} from {path}: {e}')
+        print(f'Could not load CHARACTER skin for {weapon} from {path}: {e}')
         SKIN_TEXTURES[weapon] = player_texture  # fallback to default player texture
-
 # Načítání zbraní
 weapon_textures = {}
 for name, weapon_info in WEAPONS.items():
