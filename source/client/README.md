@@ -82,6 +82,10 @@ SERVER_URL = "wss://projekt-1ep-tabor.onrender.com/ws"
 8. **Diagnostické informace**: Zobrazení FPS, pozice hráče, stavu připojení a dalších užitečných dat
 9. **Pokrovilé ovládání**: Plynulé otáčení směrem k myši, přepínání zbraní kolečkem myši
 
+## Extras
+- Klávesou K spustíte katastrofu (zemětřesení, tornádo)
+- Klávesou T zasadíte strom
+
 ## Zbraňový a projektilový systém
 
 Hra obsahuje 4 unikátní zbraně s různými taktikami použití:
