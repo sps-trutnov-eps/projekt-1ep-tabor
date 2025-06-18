@@ -674,6 +674,7 @@ async def game_loop():
         MAP_WIDTH // 2 * TILE_SIZE + 100,  # Pozice vedle středu mapy
         MAP_HEIGHT // 2 * TILE_SIZE + 100
     )
+    other_players_scooters = {}
 
     # Inicializace časovače pro automatické katastrofy, aby nezačala hned
     last_catastrophe_trigger_time = time.time()
@@ -846,7 +847,19 @@ async def game_loop():
                     # Posílání dat na server (pozice, úhel, barva, případně projektil)
                     if is_moving or should_shoot_this_frame or (current_loop_time - last_update_time >= UPDATE_INTERVAL):
                         time_before_send = time.time()
-                        data_to_send = {"x": x, "y": y, "angle": player_angle, "color": list(my_color)}
+                        data_to_send = {
+                            "x": x, 
+                            "y": y, 
+                            "angle": player_angle, 
+                            "color": list(my_color),
+                            # NOVÉ: Přidání dat o koloběžce
+                            "scooter": {
+                            "x": scooter.x,
+                            "y": scooter.y,
+                            "direction": scooter.direction,
+                            "is_player_on": scooter.is_player_on
+                        } if scooter else None
+    }
                         
                         if should_shoot_this_frame and projectiles: # Pokud jsme tento snímek střelili a máme projektil
                             # Předpokládáme, že poslední přidaný projektil je ten náš
@@ -912,10 +925,30 @@ async def game_loop():
                                             if len(server_pdata) >= 4 and isinstance(server_pdata[3], list):
                                                 my_color = tuple(server_pdata[3]) # Zde přiřazujeme globální my_color
                                             break
+                                    if isinstance(server_pdata, dict) and "scooter" in server_pdata:
+                                        scooter_data = server_pdata["scooter"]
+            
+                                        # Vytvoř nebo aktualizuj koloběžku tohoto hráče
+                                        if server_pid not in other_players_scooters:
+                                            other_players_scooters[server_pid] = Scooter(
+                                            scooter_data["x"], 
+                                            scooter_data["y"]
+                                        )
+            
+                                            # Aktualizuj pozici a stav koloběžky
+                                            other_scooter = other_players_scooters[server_pid]
+                                            other_scooter.x = scooter_data["x"]
+                                            other_scooter.y = scooter_data["y"]
+                                            other_scooter.direction = scooter_data["direction"]
+                                            other_scooter.is_player_on = scooter_data["is_player_on"]
+                                        else:
+                                            # Hráč nemá koloběžku, odstraň ji pokud existuje
+                                            if server_pid in other_players_scooters:
+                                                del other_players_scooters[server_pid]
                             
-                            # Ujistíme se, že naše vlastní data jsou v `players` aktuální
-                            if my_id and my_id in players:
-                                players[my_id] = [x, y, player_angle, list(my_color)]
+                                # Ujistíme se, že naše vlastní data jsou v `players` aktuální
+                                if my_id and my_id in players:
+                                    players[my_id] = [x, y, player_angle, list(my_color)]
                             
                             # Pokud jsme právě dostali první data, nastavíme `players_prev`
                             if not players_prev:
@@ -973,6 +1006,12 @@ async def game_loop():
                     
                     if scooter:
                         scooter.draw(screen, player_x, player_y)
+                        
+                    def draw_other_players_scooters(screen, camera_x, camera_y):
+                        """Vykreslí koloběžky ostatních hráčů"""
+                        for player_id, other_scooter in other_players_scooters.items():
+                            if not other_scooter.is_player_on:  # Vykresluj pouze koloběžky bez hráčů
+                                other_scooter.draw(screen, camera_x, camera_y)
                     
                     draw_other_players(screen, player_x, player_y) # Ostatní hráči se kreslí relativně ke kameře
                     draw_player(screen, player_x, player_y) # Náš hráč (kreslený ve středu obrazovky + shake)
