@@ -1,6 +1,5 @@
 import os
 import json
-import asyncio
 from aiohttp import web
 
 # Globální proměnné
@@ -21,13 +20,13 @@ async def handle_websocket(request):
     ws = web.WebSocketResponse()
     await ws.prepare(request)
     
-    try:
-        # Registrace nového klienta
+    try:        # Registrace nového klienta
         CLIENTS[client_id] = {
             "x": 100,
             "y": 100,
             "angle": 0,
-            "weapon": "Crossbow"
+            "weapon": "Crossbow",
+            "color": [100, 255, 100]  # Default zelená barva
         }  # Startovní pozice a výchozí hodnoty
         
         WEBSOCKET_CONNECTIONS.add(ws)
@@ -45,8 +44,7 @@ async def handle_websocket(request):
                         print(f"[ERROR] Neplatná data od klienta {client_id}")
                         await ws.send_json({"error": "Neplatná data, chybí x nebo y"})
                         continue
-                    
-                    # Aktualizace dat hráče
+                      # Aktualizace dat hráče
                     CLIENTS[client_id]["x"] = data["x"]
                     CLIENTS[client_id]["y"] = data["y"]
                     if "angle" in data:
@@ -66,9 +64,7 @@ async def handle_websocket(request):
                         if "scooter" in CLIENTS[client_id]:
                             del CLIENTS[client_id]["scooter"]
                     
-                    print(f"[UPDATE] Klient {client_id} pozice: ({data['x']}, {data['y']}), "
-                      f"angle: {CLIENTS[client_id].get('angle', 0)}, "
-                      f"scooter: {CLIENTS[client_id].get('scooter', 'None')}")
+                    print(f"[UPDATE] Klient {client_id} pozice: ({data['x']}, {data['y']}), angle: {CLIENTS[client_id].get('angle', 0)}, weapon: {CLIENTS[client_id].get('weapon', 'Crossbow')}, color: {CLIENTS[client_id].get('color', [100, 255, 100])}")
                     
                     # Projektily (původní logika zachována)
                     if "projectile" in data:
@@ -87,6 +83,22 @@ async def handle_websocket(request):
                     
                     # Posílá zpět všechny hráče (včetně úhlu a zbraně)
                     await ws.send_json(CLIENTS)
+                    
+                    # --- LIVE POČTY HRÁČŮ V TÝMECH ---
+                    if data.get("action") == "get_team_counts":
+                        # Barvy týmů podle klienta
+                        BABY_BLUE = [137, 207, 240]
+                        BABY_PINK = [255, 182, 193]
+                        blue_count = 0
+                        pink_count = 0
+                        for c in CLIENTS.values():
+                            if "color" in c:
+                                if c["color"] == BABY_BLUE:
+                                    blue_count += 1
+                                elif c["color"] == BABY_PINK:
+                                    pink_count += 1
+                        await ws.send_json({"team_counts": [blue_count, pink_count]})
+                        continue
                     
                 except json.JSONDecodeError:
                     print(f"[ERROR] Neplatný JSON od klienta {client_id}")
