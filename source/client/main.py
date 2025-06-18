@@ -772,9 +772,38 @@ async def game_loop():
                         elif event.type == pygame.KEYDOWN:
                             if event.key == pygame.K_ESCAPE:
                                 game_is_running = False
-                            elif event.key == pygame.K_t: # Testovací klávesa pro přidání stromu
-                                current_tile_x, current_tile_y = get_player_tile_position()
-                                add_image("tree1.png", current_tile_x + random.randint(-3,3), current_tile_y + random.randint(-3,3), scale=random.uniform(1.5, 2.5))
+                        elif event.type == pygame.KEYDOWN:
+                            if event.key == pygame.K_t:
+                                # Souřadnice hráče
+                                player_pos = pygame.Vector2(player_x, player_y)
+
+                                # Vytvoříme nový strom
+                                new_tree = Tree(x=player_x, y=player_y)
+
+                                # Posuneme ho dál, pokud koliduje s hráčem
+                                max_tries = 20
+                                distance_step = 60  # Minimální vzdálenost od hráče
+                                spawned = False
+
+                                for i in range(max_tries):
+                                    offset = pygame.Vector2(
+                                        random.randint(-3, 3) * distance_step,
+                                        random.randint(-3, 3) * distance_step
+                                    )
+                                    new_pos = player_pos + offset
+                                    new_tree.x = new_pos.x
+                                    new_tree.y = new_pos.y
+
+                                    # Zkontrolujeme vzdálenost od hráče
+                                    if player_pos.distance_to(new_pos) > 40:  # Vzdálenost v pixelech
+                                        # (volitelně: zkontroluj i kolizi s jinými objekty)
+                                        trees.append(new_tree)
+                                        spawned = True
+                                        break
+
+                                if not spawned:
+                                    print("Nepodařilo se najít vhodné místo pro strom.")
+
                             elif event.key == pygame.K_k: # Manuální spuštění katastrofy
                                 print("Klávesa K stisknuta - pokus o spuštění katastrofy.")
                                 start_new_random_catastrophe()
