@@ -61,8 +61,6 @@ class PowerUp:
         screen.blit(self.image, (screen_x - TILE_SIZE // 2, screen_y - TILE_SIZE // 2))
     
     
-        
-
 # Konstanty pro herní mapu
 TILE_SIZE = 40
 BOUNDARY_WIDTH = 5
@@ -123,6 +121,7 @@ WEAPONS = {
         "projectile_color": (0, 255, 255)  # Cyan
     }
 }
+
 
 # Globální proměnné pro síťovou komunikaci
 players = {}      # Data o hráčích ze serveru
@@ -204,6 +203,32 @@ except Exception as e:
     player_texture = player_surface
     print("Použita výchozí textura hráče (placeholder).")
 
+CHARACTER_SKINS = {
+    "Crossbow": "medic.png",
+    "Rocket Launcher": "soldier.png",
+    "Shotgun": "scout.png",
+    "Sniper": "sniper.png"
+}
+
+SKIN_TEXTURES = {}
+for weapon in weapon_names:
+    img_name = CHARACTER_SKINS.get(weapon, "player.png")  # <--- USE CLASS IMAGE!
+    path = os.path.join("images", img_name)
+    try:
+        SKIN_TEXTURES[weapon] = pygame.transform.scale(
+            pygame.image.load(path).convert_alpha(), (player_size, player_size)
+        )
+        print(f'Loaded CHARACTER skin for {weapon} from {path}')
+    except Exception as e:
+        print(f'Could not load CHARACTER skin for {weapon} from {path}: {e}')
+        SKIN_TEXTURES[weapon] = player_texture  # fallback to default player texture
+
+CLASS_MAX_HP = {
+    "Sniper": 100,
+    "Crossbow": 125,           # Medic
+    "Shotgun": 150,            # Scout
+    "Rocket Launcher": 150     # Soldier
+}
 
 # Načítání zbraní
 weapon_textures = {}
@@ -433,62 +458,57 @@ def draw_map(screen_surface, camera_center_x_map, camera_center_y_map):
             screen_surface.blit(img_data['image'], (int(img_screen_x), int(img_screen_y)))
 
 
-def draw_player(screen_surface, _camera_center_x_map, _camera_center_y_map): # Parametry kamery nejsou přímo potřeba, hráč je vždy ve středu
-    """Vykreslí hráče (vždy ve středu obrazovky) s ohledem na screen shake a natočení."""
+def draw_player(screen_surface, _camera_center_x_map, _camera_center_y_map):
     global player_texture, player_team, player_angle, player_size, screen_shake_offset
-    global current_weapon, weapon_textures, WEAPONS
+    global current_weapon
 
-    # Hráč je vždy ve středu obrazovky + aktuální třesení
     player_draw_center_x = SCREEN_WIDTH // 2 + screen_shake_offset[0]
     player_draw_center_y = SCREEN_HEIGHT // 2 + screen_shake_offset[1]
-   
-    if player_texture:
-        texture_to_render = player_texture
-        if player_team == 3: # Modrý tým (id 3)
-            # Vytvoříme kopii a obarvíme ji, aby originál zůstal červený
-            texture_to_render = player_texture.copy() 
-            texture_to_render.fill(BLUE, special_flags=pygame.BLEND_RGBA_MULT) # Obarví texturu
-        
-        # Rotace textury hráče podle úhlu k myši
-        rotated_player_texture = pygame.transform.rotate(texture_to_render, -player_angle) # -player_angle pro správný směr
-        
-        # Získání obdélníku rotované textury a nastavení jeho středu
-        player_rect = rotated_player_texture.get_rect(center=(player_draw_center_x, player_draw_center_y))
-        
-        screen_surface.blit(rotated_player_texture, player_rect.topleft) # Vykreslení
-        
+
+    # Use the weapon skin if available, else fallback to player_texture
+    texture_to_render = SKIN_TEXTURES.get(current_weapon, player_texture)
+
+    if player_team == 3:
+        texture_to_render = texture_to_render.copy()
+        texture_to_render.fill(BLUE, special_flags=pygame.BLEND_RGBA_MULT)
+
+    rotated_player_texture = pygame.transform.rotate(texture_to_render, -player_angle)
+    player_rect = rotated_player_texture.get_rect(center=(player_draw_center_x, player_draw_center_y))
+    screen_surface.blit(rotated_player_texture, player_rect.topleft)
+
+    # ...rest of your weapon drawing code...        
         # Vykreslení aktuální zbraně
-        if current_weapon in weapon_textures:
-            weapon_data = WEAPONS[current_weapon]
-            original_weapon_texture = weapon_textures[current_weapon]
-            
-            # Výpočet pozice zbraně relativně k hráči
-            # Úhel pro offset zbraně (kolmo na směr pohledu hráče, nebo mírně dopředu)
-            # Zde předpokládáme, že offset_x je vzdálenost od středu hráče podél osy pohledu
-            # a offset_y je vzdálenost kolmo na osu pohledu.
-            # Pro jednoduchost použijeme offset_x jako vzdálenost od středu a offset_y pro posun do strany.
-            
-            # Natočení offsetu zbraně podle úhlu hráče
-            angle_rad = math.radians(player_angle - 90) # -90 protože úhly v math a pygame mohou být různé
-            
-            # Offset zbraně od středu hráče
-            # weapon_offset_x_rotated = weapon_data["offset_x"] * math.cos(angle_rad) - weapon_data["offset_y"] * math.sin(angle_rad)
-            # weapon_offset_y_rotated = weapon_data["offset_x"] * math.sin(angle_rad) + weapon_data["offset_y"] * math.cos(angle_rad)
+    if current_weapon in weapon_textures:
+        weapon_data = WEAPONS[current_weapon]
+        original_weapon_texture = weapon_textures[current_weapon]
+        
+        # Výpočet pozice zbraně relativně k hráči
+        # Úhel pro offset zbraně (kolmo na směr pohledu hráče, nebo mírně dopředu)
+        # Zde předpokládáme, že offset_x je vzdálenost od středu hráče podél osy pohledu
+        # a offset_y je vzdálenost kolmo na osu pohledu.
+        # Pro jednoduchost použijeme offset_x jako vzdálenost od středu a offset_y pro posun do strany.
+        
+        # Natočení offsetu zbraně podle úhlu hráče
+        angle_rad = math.radians(player_angle - 90) # -90 protože úhly v math a pygame mohou být různé
+        
+        # Offset zbraně od středu hráče
+        # weapon_offset_x_rotated = weapon_data["offset_x"] * math.cos(angle_rad) - weapon_data["offset_y"] * math.sin(angle_rad)
+        # weapon_offset_y_rotated = weapon_data["offset_x"] * math.sin(angle_rad) + weapon_data["offset_y"] * math.cos(angle_rad)
 
-            # Jednodušší offset: zbraň je mírně před hráčem a vpravo od něj (z pohledu hráče)
-            # Vzdálenost od středu hráče ve směru pohledu
-            forward_offset = weapon_data.get("offset_x", 20) # Jak daleko před hráčem
-            # Vzdálenost od osy pohledu (do strany)
-            side_offset = weapon_data.get("offset_y", 10) # Jak daleko do strany
+        # Jednodušší offset: zbraň je mírně před hráčem a vpravo od něj (z pohledu hráče)
+        # Vzdálenost od středu hráče ve směru pohledu
+        forward_offset = weapon_data.get("offset_x", 20) # Jak daleko před hráčem
+        # Vzdálenost od osy pohledu (do strany)
+        side_offset = weapon_data.get("offset_y", 10) # Jak daleko do strany
 
-            weapon_center_x = player_draw_center_x + forward_offset * math.cos(angle_rad) - side_offset * math.sin(angle_rad)
-            weapon_center_y = player_draw_center_y + forward_offset * math.sin(angle_rad) + side_offset * math.cos(angle_rad)
+        weapon_center_x = player_draw_center_x + forward_offset * math.cos(angle_rad) - side_offset * math.sin(angle_rad)
+        weapon_center_y = player_draw_center_y + forward_offset * math.sin(angle_rad) + side_offset * math.cos(angle_rad)
 
-            # Rotace textury zbraně
-            rotated_weapon_texture = pygame.transform.rotate(original_weapon_texture, -player_angle)
-            weapon_rect = rotated_weapon_texture.get_rect(center=(int(weapon_center_x), int(weapon_center_y)))
-            
-            screen_surface.blit(rotated_weapon_texture, weapon_rect.topleft)
+        # Rotace textury zbraně
+        rotated_weapon_texture = pygame.transform.rotate(original_weapon_texture, -player_angle)
+        weapon_rect = rotated_weapon_texture.get_rect(center=(int(weapon_center_x), int(weapon_center_y)))
+        
+        screen_surface.blit(rotated_weapon_texture, weapon_rect.topleft)
     else:
         # Záložní vykreslení, pokud textura hráče není k dispozici
         fallback_color = RED if player_team == 2 else BLUE
@@ -647,17 +667,18 @@ generate_medkits(medkit_amount, TILE_SIZE, MAP_WIDTH, MAP_HEIGHT, BOUNDARY_WIDTH
 
 
 def change_weapon(direction_change):
-    """Změní aktivní zbraň."""
     global current_weapon_index, current_weapon, weapon_names
-    
-    current_weapon_index = (current_weapon_index + direction_change) % len(weapon_names)
-    # Zajistí, že index zůstane v platném rozsahu (pro případ záporného výsledku % v Pythonu)
-    if current_weapon_index < 0:
-        current_weapon_index += len(weapon_names)
-        
-    current_weapon = weapon_names[current_weapon_index]
-    print(f"Zbraň změněna na: {current_weapon}")
+    global max_player_health, player_health
 
+    current_weapon_index = (current_weapon_index + direction_change) % len(weapon_names)
+    current_weapon = weapon_names[current_weapon_index]
+
+    # Set max HP based on class
+    max_player_health = CLASS_MAX_HP.get(current_weapon, 100)
+    # Optionally, heal to full when switching class:
+    player_health = max_player_health
+
+    print(f"Zbraň změněna na {current_weapon} (Max HP: {max_player_health})")
 
 def start_new_random_catastrophe():
     """Spustí novou náhodnou katastrofu, pokud žádná neběží."""
