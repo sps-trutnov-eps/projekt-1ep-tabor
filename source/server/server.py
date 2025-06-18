@@ -5,7 +5,7 @@ from aiohttp import web
 
 # Globální proměnné
 PORT = int(os.environ.get("PORT", 5555))
-CLIENTS = {}  # Ukládá připojené hráče ve formátu {id: (x, y)}
+CLIENTS = {}  # Ukládá připojené hráče ve formátu {id: {...}}
 WEBSOCKET_CONNECTIONS = set()  # Ukládá aktivní WebSocket připojení
 
 # Generátor ID klientů
@@ -21,9 +21,15 @@ async def handle_websocket(request):
     ws = web.WebSocketResponse()
     await ws.prepare(request)
     
-    try:
-        # Registrace nového klienta
-        CLIENTS[client_id] = (100, 100)  # Startovní pozice
+    try:        # Registrace nového klienta
+        CLIENTS[client_id] = {
+            "x": 100,
+            "y": 100,
+            "angle": 0,
+            "weapon": "Crossbow",
+            "color": [100, 255, 100]  # Default zelená barva
+        }  # Startovní pozice a výchozí hodnoty
+        
         WEBSOCKET_CONNECTIONS.add(ws)
         
         print(f"[NEW CONNECTION] WebSocket klient {client_id} připojen")
@@ -39,12 +45,34 @@ async def handle_websocket(request):
                         print(f"[ERROR] Neplatná data od klienta {client_id}")
                         await ws.send_json({"error": "Neplatná data, chybí x nebo y"})
                         continue
+                      # Aktualizace dat hráče
+                    CLIENTS[client_id]["x"] = data["x"]
+                    CLIENTS[client_id]["y"] = data["y"]
+                    if "angle" in data:
+                        CLIENTS[client_id]["angle"] = data["angle"]
+                    if "weapon" in data:
+                        CLIENTS[client_id]["weapon"] = data["weapon"]
+                    if "color" in data and isinstance(data["color"], list):
+                        CLIENTS[client_id]["color"] = data["color"]
                     
-                    # Aktualizace pozice
-                    CLIENTS[client_id] = (data["x"], data["y"])
-                    print(f"[UPDATE] Klient {client_id} pozice: ({data['x']}, {data['y']})")
+                    print(f"[UPDATE] Klient {client_id} pozice: ({data['x']}, {data['y']}), angle: {CLIENTS[client_id].get('angle', 0)}, weapon: {CLIENTS[client_id].get('weapon', 'Crossbow')}, color: {CLIENTS[client_id].get('color', [100, 255, 100])}")
                     
-                    # Posílá zpět všechny pozice hráčů
+                    # Projektily (původní logika zachována)
+                    if "projectile" in data:
+                        for other_ws in WEBSOCKET_CONNECTIONS:
+                            if other_ws.closed:
+                                continue
+                            try:
+                                await other_ws.send_json({
+                                    "projectile_broadcast": {
+                                        "owner": client_id,
+                                        **data["projectile"]
+                                    }
+                                })
+                            except:
+                                pass
+                    
+                    # Posílá zpět všechny hráče (včetně úhlu a zbraně)
                     await ws.send_json(CLIENTS)
                     
                 except json.JSONDecodeError:
