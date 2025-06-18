@@ -1,6 +1,5 @@
 import os
 import json
-import asyncio
 from aiohttp import web
 
 # Globální proměnné
@@ -74,6 +73,22 @@ async def handle_websocket(request):
                     
                     # Posílá zpět všechny hráče (včetně úhlu a zbraně)
                     await ws.send_json(CLIENTS)
+                    
+                    # --- LIVE POČTY HRÁČŮ V TÝMECH ---
+                    if data.get("action") == "get_team_counts":
+                        # Barvy týmů podle klienta
+                        BABY_BLUE = [137, 207, 240]
+                        BABY_PINK = [255, 182, 193]
+                        blue_count = 0
+                        pink_count = 0
+                        for c in CLIENTS.values():
+                            if "color" in c:
+                                if c["color"] == BABY_BLUE:
+                                    blue_count += 1
+                                elif c["color"] == BABY_PINK:
+                                    pink_count += 1
+                        await ws.send_json({"team_counts": [blue_count, pink_count]})
+                        continue
                     
                 except json.JSONDecodeError:
                     print(f"[ERROR] Neplatný JSON od klienta {client_id}")
