@@ -57,14 +57,17 @@ class PowerUp:
         if not self.active:
             return
         screen_x = int(self.x - camera_x + SCREEN_WIDTH // 2)
-        screen_y = int(self.y - camera_y + SCREEN_WIDTH // 2)
+        screen_y = int(self.y - camera_y + SCREEN_HEIGHT // 2)
+        
+        print(f"[DRAW] Power-up {self.effect_type} na ({self.x}, {self.x})") 
+        
         screen.blit(self.image, (screen_x - TILE_SIZE // 2, screen_y - TILE_SIZE // 2))
     
     
         
 
 # Konstanty pro herní mapu
-TILE_SIZE = 40
+TILE_SIZE = 200
 BOUNDARY_WIDTH = 5
 MAP_WIDTH = 100
 MAP_HEIGHT = 100
@@ -687,13 +690,14 @@ async def game_loop():
                     current_time = time.time()
                     current_loop_time = time.time()
                     should_shoot_this_frame = False # Reset na začátku každého snímku
-                    if current_time - sprint_respawn_timer >= 2:
+                    if current_time - sprint_respawn_timer >= 10:
                         sprint_respawn_timer = current_time
                         spawn_x = random.randint(BOUNDARY_WIDTH + 1, MAP_WIDTH - BOUNDARY_WIDTH - 2) * TILE_SIZE
                         spawn_y = random.randint(BOUNDARY_WIDTH + 1, MAP_HEIGHT - BOUNDARY_WIDTH - 2) * TILE_SIZE
                         sprint = PowerUp(spawn_x, spawn_y, "images/sprint.png", "sprint", duration=5)
                         power_ups.append(sprint)
                         print("Nový sprint power-up přidán!")
+                        print(f"Sprint na {spawn_x}, {spawn_y}")
                     current_time = time.time()
 
                     # Zpracování událostí (vstupy od uživatele)
@@ -831,6 +835,8 @@ async def game_loop():
                                     print("Sprint aktivován!")
                                 power_up.active = False
                                 power_ups.remove(power_up)
+                                print("Hráč sebral power-up!")
+
                                 
                     
                     
@@ -844,7 +850,7 @@ async def game_loop():
                     # Provedení pohybu
                     if moved:
                         move_player(dx, dy)
-                        update_powerups()
+                    update_powerups()
 
                     # Výpočet úhlu mezi hráčem a kurzorem myši
                     player_screen_x = int(SCREEN_WIDTH // 2)
