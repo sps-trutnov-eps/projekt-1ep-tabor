@@ -269,6 +269,7 @@ projectiles = []
 # Default values, individual weapons override these
 # PROJECTILE_SPEED = 10
 # PROJECTILE_LIFETIME = 60
+other_players_scooters = {}
 
 def add_image(image_path, x_tile, y_tile, scale=1.0):
     """Přidá obrázek na mapu na dané dlaždicové souřadnice."""
@@ -569,6 +570,12 @@ def draw_player(screen_surface, _camera_center_x_map, _camera_center_y_map):
         screen_surface.blit(rotated_weapon_texture, weapon_rect.topleft)
     else:
         pygame.draw.circle(screen_surface, (200, 200, 200), (player_draw_center_x, player_draw_center_y), player_radius)
+        
+def draw_other_players_scooters(screen, camera_x, camera_y):
+    """Vykreslí koloběžky ostatních hráčů"""
+    for player_id, other_scooter in other_players_scooters.items():
+        if not other_scooter.is_player_on:  # Vykresluj pouze koloběžky bez hráčů
+            other_scooter.draw(screen, camera_x, camera_y)
 
 
 def draw_other_players(screen_surface, camera_center_x_map, camera_center_y_map):
@@ -793,6 +800,7 @@ medkits = []
 generate_medkits(medkit_amount, TILE_SIZE, MAP_WIDTH, MAP_HEIGHT, BOUNDARY_WIDTH, medkits=medkits)
 
 
+
 def change_weapon(direction_change):
     global current_weapon_index, current_weapon, weapon_names
     global max_player_health, player_health
@@ -839,12 +847,13 @@ async def game_loop():
     global last_catastrophe_trigger_time, catastrophe_interval, screen_shake_offset
     global sprint_active, sprint_timer, PLAYER_SPEED
     global sprint_respawn_timer
+    global other_players_scooters
     
     scooter = Scooter(
         MAP_WIDTH // 2 * TILE_SIZE + 100,  # Pozice vedle středu mapy
         MAP_HEIGHT // 2 * TILE_SIZE + 100
     )
-    other_players_scooters = {}
+    
 
     # Inicializace časovače pro automatické katastrofy, aby nezačala hned
     last_catastrophe_trigger_time = time.time()
@@ -1215,26 +1224,26 @@ async def game_loop():
                               # Ujistíme se, že naše vlastní data jsou v `players` aktuální
                             if my_id and my_id in players:
                                 players[my_id] = [x, y, player_angle, list(my_color), current_weapon]
-                                    if isinstance(server_pdata, dict) and "scooter" in server_pdata:
-                                        scooter_data = server_pdata["scooter"]
+                                if isinstance(server_pdata, dict) and "scooter" in server_pdata:
+                                    scooter_data = server_pdata["scooter"]
             
-                                        # Vytvoř nebo aktualizuj koloběžku tohoto hráče
-                                        if server_pid not in other_players_scooters:
-                                            other_players_scooters[server_pid] = Scooter(
-                                            scooter_data["x"], 
-                                            scooter_data["y"]
-                                        )
+                                    # Vytvoř nebo aktualizuj koloběžku tohoto hráče
+                                    if server_pid not in other_players_scooters:
+                                        other_players_scooters[server_pid] = Scooter(
+                                        scooter_data["x"], 
+                                        scooter_data["y"]
+                                    )
             
-                                            # Aktualizuj pozici a stav koloběžky
-                                            other_scooter = other_players_scooters[server_pid]
-                                            other_scooter.x = scooter_data["x"]
-                                            other_scooter.y = scooter_data["y"]
-                                            other_scooter.direction = scooter_data["direction"]
-                                            other_scooter.is_player_on = scooter_data["is_player_on"]
-                                        else:
-                                            # Hráč nemá koloběžku, odstraň ji pokud existuje
-                                            if server_pid in other_players_scooters:
-                                                del other_players_scooters[server_pid]
+                                        # Aktualizuj pozici a stav koloběžky
+                                        other_scooter = other_players_scooters[server_pid]
+                                        other_scooter.x = scooter_data["x"]
+                                        other_scooter.y = scooter_data["y"]
+                                        other_scooter.direction = scooter_data["direction"]
+                                        other_scooter.is_player_on = scooter_data["is_player_on"]
+                                    else:
+                                        # Hráč nemá koloběžku, odstraň ji pokud existuje
+                                        if server_pid in other_players_scooters:
+                                            del other_players_scooters[server_pid]
                             
                                 # Ujistíme se, že naše vlastní data jsou v `players` aktuální
                                 if my_id and my_id in players:
@@ -1299,13 +1308,7 @@ async def game_loop():
                     if scooter:
                         scooter.draw(screen, player_x, player_y)
                         
-                    def draw_other_players_scooters(screen, camera_x, camera_y):
-                        """Vykreslí koloběžky ostatních hráčů"""
-                    
-                    draw_flag(screen, player_x, player_y, pygame.time.get_ticks() / 1000.0)
-                                other_scooter.draw(screen, camera_x, camera_y)
-                            if not other_scooter.is_player_on:  # Vykresluj pouze koloběžky bez hráčů
-                        for player_id, other_scooter in other_players_scooters.items():
+                    draw_other_players_scooters(screen, player_x, player_y)
                     draw_other_players(screen, player_x, player_y) # Ostatní hráči se kreslí relativně ke kameře
                     draw_player(screen, player_x, player_y) # Náš hráč (kreslený ve středu obrazovky + shake)
                     
