@@ -8,7 +8,7 @@ class Scooter:
         self.y = y
         self.direction = 0  # směr v stupních
         self.radius = 80
-        self.speed = 8  # rychlejší než běžný pohyb hráče
+        self.speed = 4  # rychlejší než běžný pohyb hráče
         self.is_player_on = False
         
         # Načtení textury koloběžky (volitelné)
