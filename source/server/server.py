@@ -21,13 +21,13 @@ async def handle_websocket(request):
     ws = web.WebSocketResponse()
     await ws.prepare(request)
     
-    try:
-        # Registrace nového klienta
+    try:        # Registrace nového klienta
         CLIENTS[client_id] = {
             "x": 100,
             "y": 100,
             "angle": 0,
-            "weapon": "Crossbow"
+            "weapon": "Crossbow",
+            "color": [100, 255, 100]  # Default zelená barva
         }  # Startovní pozice a výchozí hodnoty
         
         WEBSOCKET_CONNECTIONS.add(ws)
@@ -45,16 +45,17 @@ async def handle_websocket(request):
                         print(f"[ERROR] Neplatná data od klienta {client_id}")
                         await ws.send_json({"error": "Neplatná data, chybí x nebo y"})
                         continue
-                    
-                    # Aktualizace dat hráče
+                      # Aktualizace dat hráče
                     CLIENTS[client_id]["x"] = data["x"]
                     CLIENTS[client_id]["y"] = data["y"]
                     if "angle" in data:
                         CLIENTS[client_id]["angle"] = data["angle"]
                     if "weapon" in data:
                         CLIENTS[client_id]["weapon"] = data["weapon"]
+                    if "color" in data and isinstance(data["color"], list):
+                        CLIENTS[client_id]["color"] = data["color"]
                     
-                    print(f"[UPDATE] Klient {client_id} pozice: ({data['x']}, {data['y']}), angle: {CLIENTS[client_id].get('angle', 0)}, weapon: {CLIENTS[client_id].get('weapon', 'Crossbow')}")
+                    print(f"[UPDATE] Klient {client_id} pozice: ({data['x']}, {data['y']}), angle: {CLIENTS[client_id].get('angle', 0)}, weapon: {CLIENTS[client_id].get('weapon', 'Crossbow')}, color: {CLIENTS[client_id].get('color', [100, 255, 100])}")
                     
                     # Projektily (původní logika zachována)
                     if "projectile" in data:

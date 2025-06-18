@@ -518,18 +518,25 @@ def draw_player(screen_surface, _camera_center_x_map, _camera_center_y_map):
 def draw_other_players(screen_surface, camera_center_x_map, camera_center_y_map):
     """Vykreslí ostatní hráče s ohledem na kameru a screen shake."""
     global players_interpolated, my_id, player_radius, screen_shake_offset
+    global player_texture, SKIN_TEXTURES, weapon_textures, WEAPONS
     map_pixel_width = MAP_WIDTH * TILE_SIZE
     map_pixel_height = MAP_HEIGHT * TILE_SIZE
+
+    # Debug výpis
+    other_players_count = len([pid for pid in players_interpolated.keys() if pid != my_id])
+    if other_players_count > 0:
+        print(f"[DEBUG] Kreslím {other_players_count} ostatních hráčů (celkem {len(players_interpolated)}, můj ID: {my_id})")
 
     for player_id_server, p_data_server in players_interpolated.items():
         if player_id_server == my_id: # Nekreslíme sami sebe zde
             continue
         
-        if isinstance(p_data_server, (list, tuple)) and len(p_data_server) >= 2: # [x_net, y_net, angle, color_list]
+        if isinstance(p_data_server, (list, tuple)) and len(p_data_server) >= 2: # [x_net, y_net, angle, color_list, weapon]
             # Síťové souřadnice (0-SCREEN_WIDTH/HEIGHT)
             other_player_net_x, other_player_net_y = p_data_server[0], p_data_server[1]
             other_player_angle = p_data_server[2] if len(p_data_server) > 2 else 0
             other_player_color_tuple = tuple(p_data_server[3]) if len(p_data_server) > 3 and isinstance(p_data_server[3], list) else GREEN
+            other_player_weapon = p_data_server[4] if len(p_data_server) > 4 else "Crossbow"
             
             # Převod síťových souřadnic na mapové souřadnice (pixely)
             other_player_map_x = (other_player_net_x / SCREEN_WIDTH) * map_pixel_width
@@ -538,19 +545,45 @@ def draw_other_players(screen_surface, camera_center_x_map, camera_center_y_map)
             # Pozice ostatních hráčů na obrazovce
             other_player_screen_x = int(other_player_map_x - camera_center_x_map + SCREEN_WIDTH // 2 + screen_shake_offset[0])
             other_player_screen_y = int(other_player_map_y - camera_center_y_map + SCREEN_HEIGHT // 2 + screen_shake_offset[1])
+              # Vykreslení hráče s plnou grafikou
+            # Použijeme skin pro zbraň, pokud je dostupný, jinak základní texturu hráče
+            texture_to_render = SKIN_TEXTURES.get(other_player_weapon, player_texture)
             
-            # Jednoduché vykreslení jako obdélník nebo kruh
-            # Můžeme použít player_texture a rotovat ji podle other_player_angle, pokud chceme detailnější zobrazení
-            # Pro jednoduchost zde použijeme barevný kruh
-            pygame.draw.circle(screen_surface, other_player_color_tuple, 
-                               (other_player_screen_x, other_player_screen_y), 
-                               player_radius) # Použijeme stejný radius jako pro našeho hráče
-            
-            # Můžeme přidat i ukazatel směru
-            pointer_len = player_radius * 1.5
-            end_x = other_player_screen_x + pointer_len * math.cos(math.radians(other_player_angle - 90))
-            end_y = other_player_screen_y + pointer_len * math.sin(math.radians(other_player_angle - 90))
-            pygame.draw.line(screen_surface, WHITE, (other_player_screen_x, other_player_screen_y), (int(end_x), int(end_y)), 2)
+            if texture_to_render:
+                # Rotace textury podle úhlu hráče
+                rotated_texture = pygame.transform.rotate(texture_to_render, -other_player_angle)
+                texture_rect = rotated_texture.get_rect(center=(other_player_screen_x, other_player_screen_y))
+                screen_surface.blit(rotated_texture, texture_rect.topleft)
+                
+                # Vykreslení zbraně
+                if other_player_weapon in weapon_textures:
+                    weapon_data = WEAPONS[other_player_weapon]
+                    original_weapon_texture = weapon_textures[other_player_weapon]
+                    
+                    # Výpočet pozice zbraně relativně k hráči
+                    angle_rad = math.radians(other_player_angle - 90)
+                    forward_offset = weapon_data.get("offset_x", 20)
+                    side_offset = weapon_data.get("offset_y", 10)
+                    
+                    weapon_center_x = other_player_screen_x + forward_offset * math.cos(angle_rad) - side_offset * math.sin(angle_rad)
+                    weapon_center_y = other_player_screen_y + forward_offset * math.sin(angle_rad) + side_offset * math.cos(angle_rad)
+                    
+                    # Rotace textury zbraně
+                    rotated_weapon_texture = pygame.transform.rotate(original_weapon_texture, -other_player_angle)
+                    weapon_rect = rotated_weapon_texture.get_rect(center=(int(weapon_center_x), int(weapon_center_y)))
+                    
+                    screen_surface.blit(rotated_weapon_texture, weapon_rect.topleft)
+            else:
+                # Záložní vykreslení jako barevný kruh
+                pygame.draw.circle(screen_surface, other_player_color_tuple, 
+                                   (other_player_screen_x, other_player_screen_y), 
+                                   player_radius)
+                
+                # Ukazatel směru
+                pointer_len = player_radius * 1.5
+                end_x = other_player_screen_x + pointer_len * math.cos(math.radians(other_player_angle - 90))
+                end_y = other_player_screen_y + pointer_len * math.sin(math.radians(other_player_angle - 90))
+                pygame.draw.line(screen_surface, WHITE, (other_player_screen_x, other_player_screen_y), (int(end_x), int(end_y)), 2)
 
 
 def draw_ui(screen_surface, ui_font):
@@ -921,10 +954,9 @@ async def game_loop():
                         last_update_time = current_time
                     
                     # Přijímání dat od serveru (non-blocking)
-                    # Posílání dat na server (pozice, úhel, barva, případně projektil)
-                    if is_moving or should_shoot_this_frame or (current_loop_time - last_update_time >= UPDATE_INTERVAL):
+                    # Posílání dat na server (pozice, úhel, barva, případně projektil)                    if is_moving or should_shoot_this_frame or (current_loop_time - last_update_time >= UPDATE_INTERVAL):
                         time_before_send = time.time()
-                        data_to_send = {"x": x, "y": y, "angle": player_angle, "color": list(my_color)}
+                        data_to_send = {"x": x, "y": y, "angle": player_angle, "color": list(my_color), "weapon": current_weapon}
                         
                         if should_shoot_this_frame and projectiles: # Pokud jsme tento snímek střelili a máme projektil
                             # Předpokládáme, že poslední přidaný projektil je ten náš
@@ -969,12 +1001,24 @@ async def game_loop():
                                         "radius": proj_info.get("radius", default_weapon_props["projectile_size"])
                                     }
                                     projectiles.append(received_projectile)
-                                # else: print(f"Ignoruji vlastní projektil od serveru: {proj_info.get('owner_id')}")
-                                continue # Přeskočíme zbytek, pokud to byla jen zpráva o projektilu
-
-                            # Zpracování pozic hráčů (slovník {id: [x_net, y_net, angle, color_list]})
+                                # else: print(f"Ignoruji vlastní projektil od serveru: {proj_info.get('owner_id')}")                            # Zpracování pozic hráčů (slovník {id: [x_net, y_net, angle, color_list, weapon]})
                             players_prev = players_interpolated.copy() if players_interpolated else {}
-                            players = server_data # Server posílá kompletní stav všech hráčů
+                            
+                            # Server posílá objekt, převedeme na pole pro kompatibilitu
+                            players = {}
+                            for pid, pdata in server_data.items():
+                                if isinstance(pdata, dict):
+                                    # Převod z objektu na pole [x, y, angle, color, weapon]
+                                    players[pid] = [
+                                        pdata.get("x", 100),
+                                        pdata.get("y", 100), 
+                                        pdata.get("angle", 0),
+                                        pdata.get("color", [100, 255, 100]),
+                                        pdata.get("weapon", "Crossbow")
+                                    ]
+                                else:
+                                    # Pokud už je to pole, zachováme
+                                    players[pid] = pdata
 
                             # První přiřazení ID našemu hráči
                             if my_id is None:
@@ -990,10 +1034,9 @@ async def game_loop():
                                             if len(server_pdata) >= 4 and isinstance(server_pdata[3], list):
                                                 my_color = tuple(server_pdata[3]) # Zde přiřazujeme globální my_color
                                             break
-                            
-                            # Ujistíme se, že naše vlastní data jsou v `players` aktuální
+                              # Ujistíme se, že naše vlastní data jsou v `players` aktuální
                             if my_id and my_id in players:
-                                players[my_id] = [x, y, player_angle, list(my_color)]
+                                players[my_id] = [x, y, player_angle, list(my_color), current_weapon]
                             
                             # Pokud jsme právě dostali první data, nastavíme `players_prev`
                             if not players_prev:
@@ -1013,19 +1056,18 @@ async def game_loop():
                     except Exception as e:
                         print(f"Neočekávaná chyba při příjmu dat ze serveru: {e}")
 
-                    status = "Připojeno" if connected else "Odpojeno"
-
-                    # Interpolace pozic ostatních hráčů pro plynulejší pohyb
+                    status = "Připojeno" if connected else "Odpojeno"                    # Interpolace pozic ostatních hráčů pro plynulejší pohyb
                     current_interpolated_state = {}
                     for server_pid, server_pdata in players.items():
-                        if isinstance(server_pdata, list) and len(server_pdata) >= 2: # [x_net, y_net, angle, color]
+                        if isinstance(server_pdata, list) and len(server_pdata) >= 2: # [x_net, y_net, angle, color, weapon]
                             net_x_from_server, net_y_from_server = server_pdata[0], server_pdata[1]
                             angle_from_server = server_pdata[2] if len(server_pdata) > 2 else 0
                             color_list_from_server = server_pdata[3] if len(server_pdata) > 3 and isinstance(server_pdata[3], list) else list(GREEN)
-
+                            weapon_from_server = server_pdata[4] if len(server_pdata) > 4 else "Crossbow"
+                            
                             if server_pid == my_id:
                                 # Naše pozice je vždy aktuální (x, y jsou naše síťové souřadnice)
-                                current_interpolated_state[server_pid] = [x, y, player_angle, list(my_color)]
+                                current_interpolated_state[server_pid] = [x, y, player_angle, list(my_color), current_weapon]
                             elif server_pid in players_prev and \
                                  isinstance(players_prev[server_pid], list) and \
                                  len(players_prev[server_pid]) >= 2:
@@ -1038,13 +1080,13 @@ async def game_loop():
                                 # Interpolace úhlu může být složitější (shortest angle), pro jednoduchost lineární
                                 interp_angle = prev_angle + (angle_from_server - prev_angle) * other_players_interpolation_factor
 
-                                current_interpolated_state[server_pid] = [interp_net_x, interp_net_y, interp_angle, color_list_from_server]
+                                current_interpolated_state[server_pid] = [interp_net_x, interp_net_y, interp_angle, color_list_from_server, weapon_from_server]
                             else:
                                 # Nový hráč nebo chybí předchozí data, použijeme aktuální data ze serveru
-                                current_interpolated_state[server_pid] = [net_x_from_server, net_y_from_server, angle_from_server, color_list_from_server]
-                                players_interpolated = current_interpolated_state
-                                # Pokud nemáme předchozí pozici, použijeme aktuální
-                                players_interpolated[player_id] = pos
+                                current_interpolated_state[server_pid] = [net_x_from_server, net_y_from_server, angle_from_server, color_list_from_server, weapon_from_server]
+                    
+                    # Nastavíme interpolované data
+                    players_interpolated = current_interpolated_state
                     
 
                     # Vykreslení
