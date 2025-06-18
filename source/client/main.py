@@ -26,6 +26,9 @@ clock = pygame.time.Clock()
 flag_taken = False
 flag_px = 600
 flag_py = 3300
+blue_flag_taken = False
+blue_flag_px = 3300
+blue_flag_py = 600
 
 # Barvy
 BLACK = (0, 0, 0)
@@ -398,6 +401,48 @@ def draw_flag(screen, camera_x, camera_y, time_elapsed):
     # Vlajka
     pygame.draw.polygon(screen, (220, 50, 50), flag_points)
     pygame.draw.polygon(screen, BLACK, flag_points, 2)
+    
+def draw_blue_flag(screen, camera_x, camera_y, time_elapsed):
+    if blue_flag_taken:
+        return
+
+    screen_x = int(blue_flag_px - camera_x + SCREEN_WIDTH // 2)
+    screen_y = int(blue_flag_py - camera_y + SCREEN_HEIGHT // 2)
+
+    scale = 2.0
+    flag_height = int(30 * scale)
+    pole_radius = int(10 * scale)
+    flag_length = int(40 * scale)
+    wave_offset = 5 * math.sin(time_elapsed * 2) * scale
+
+    flag_points = [
+        (screen_x, screen_y - 5),
+        (screen_x + flag_length, screen_y - 15 - wave_offset),
+        (screen_x, screen_y - flag_height - 3 * math.sin(time_elapsed * 2) * scale)
+    ]
+
+    pygame.draw.circle(screen, (50, 50, 220), (screen_x, screen_y), pole_radius)
+    pygame.draw.line(screen, BLACK, (screen_x, screen_y), (screen_x, screen_y - flag_height - 10))
+    pygame.draw.polygon(screen, (50, 50, 220), flag_points)
+    pygame.draw.polygon(screen, BLACK, flag_points, 2)
+    
+def handle_blue_flag_action():
+    global blue_flag_taken, player_x, player_y, blue_flag_px, blue_flag_py
+
+    # Vypiš pro kontrolu:
+    print(f"[DEBUG] Hráč: ({player_x:.1f}, {player_y:.1f}) | Vlajka: ({blue_flag_px:.1f}, {blue_flag_py:.1f})")
+
+    if not blue_flag_taken:
+        distance = math.hypot(player_x - blue_flag_px, player_y - blue_flag_py)
+        print(f"[DEBUG] Vzdálenost: {distance:.1f}")
+        if distance < 80:  # Zvětšil jsem na 80 pro jistotu
+            blue_flag_taken = True
+            print(" Sebral jsi modrou vlajku!")
+    else:
+        blue_flag_px = player_x
+        blue_flag_py = player_y
+        blue_flag_taken = False
+        print(f" Položil jsi modrou vlajku na ({blue_flag_px:.1f}, {blue_flag_py:.1f})")
 
 def draw_map(screen_surface, camera_center_x_map, camera_center_y_map):
     """Vykreslí mapu s ohledem na pozici kamery a screen shake."""
@@ -778,6 +823,8 @@ async def game_loop():
                             elif event.key == pygame.K_k: # Manuální spuštění katastrofy
                                 print("Klávesa K stisknuta - pokus o spuštění katastrofy.")
                                 start_new_random_catastrophe()
+                            elif event.key == pygame.K_l:
+                                handle_blue_flag_action()
                         if event.type == pygame.QUIT or (event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE):
                             running = False
                         elif event.type == pygame.KEYDOWN and event.key == pygame.K_t:
@@ -1096,6 +1143,7 @@ async def game_loop():
                     # Efekt třesení (screen_shake_offset) se aplikuje uvnitř jednotlivých vykreslovacích funkcí.
                     draw_map(screen, player_x, player_y)
                     draw_flag(screen, player_x, player_y, pygame.time.get_ticks() / 1000.0)
+                    draw_blue_flag(screen, player_x, player_y, pygame.time.get_ticks() / 1000.0)
                     draw_other_players(screen, player_x, player_y) # Ostatní hráči se kreslí relativně ke kameře
                     draw_player(screen, player_x, player_y) # Náš hráč (kreslený ve středu obrazovky + shake)
                     
