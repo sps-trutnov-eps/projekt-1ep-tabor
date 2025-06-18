@@ -53,8 +53,22 @@ async def handle_websocket(request):
                         CLIENTS[client_id]["angle"] = data["angle"]
                     if "weapon" in data:
                         CLIENTS[client_id]["weapon"] = data["weapon"]
+                        
+                    if "scooter" in data and data["scooter"] is not None:
+                        CLIENTS[client_id]["scooter"] = {
+                            "x": data["scooter"]["x"],
+                            "y": data["scooter"]["y"], 
+                            "direction": data["scooter"]["direction"],
+                            "is_player_on": data["scooter"]["is_player_on"]
+                        }
+                    else:
+                        # Pokud hráč nemá koloběžku, odstraň ji ze serveru
+                        if "scooter" in CLIENTS[client_id]:
+                            del CLIENTS[client_id]["scooter"]
                     
-                    print(f"[UPDATE] Klient {client_id} pozice: ({data['x']}, {data['y']}), angle: {CLIENTS[client_id].get('angle', 0)}, weapon: {CLIENTS[client_id].get('weapon', 'Crossbow')}")
+                    print(f"[UPDATE] Klient {client_id} pozice: ({data['x']}, {data['y']}), "
+                      f"angle: {CLIENTS[client_id].get('angle', 0)}, "
+                      f"scooter: {CLIENTS[client_id].get('scooter', 'None')}")
                     
                     # Projektily (původní logika zachována)
                     if "projectile" in data:

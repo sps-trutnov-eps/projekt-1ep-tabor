@@ -38,13 +38,38 @@ BLUE = (0, 0, 255)
 WHITE = (255, 255, 255)
 YELLOW = (255, 255, 0)
 
+class PowerUp:
+    def __init__(self, x, y, image_path, effect_type, duration = 20):
+        self.x = x
+        self.y = y
+        try:    
+            self.image = pygame.image.load(image_path).convert_alpha()
+            self.image = pygame.transform.scale(self.image, (TILE_SIZE, TILE_SIZE))
+        except:
+            self.image = pygame.Surface((TILE_SIZE, TILE_SIZE))
+            self.image.fill((255, 255, 0))
+        
+        self.rect = self.image.get_rect(center=(x, y))
+        self.effect_type = effect_type
+        self.duration = duration
+        self.active = True
+    
+    def draw(self, screen, camera_x, camera_y):
+        if not self.active:
+            return
+        screen_x = int(self.x - camera_x + SCREEN_WIDTH // 2)
+        screen_y = int(self.y - camera_y + SCREEN_WIDTH // 2)
+        screen.blit(self.image, (screen_x - TILE_SIZE // 2, screen_y - TILE_SIZE // 2))
+    
+    
 # Konstanty pro herní mapu
 TILE_SIZE = 40
 BOUNDARY_WIDTH = 5
 MAP_WIDTH = 100
 MAP_HEIGHT = 100
 PLAYER_SIZE_MULTIPLIER = 2.5
-PLAYER_SPEED = 4
+BASE_SPEED = 4
+PLAYER_SPEED = BASE_SPEED
 
 # Weapons configuration
 WEAPONS = {
@@ -98,6 +123,7 @@ WEAPONS = {
     }
 }
 
+
 # Globální proměnné pro síťovou komunikaci
 players = {}      # Data o hráčích ze serveru
 players_interpolated = {}  # Data o hráčích pro vykreslení (interpolovaná)
@@ -122,6 +148,9 @@ weapon_cooldowns = {name: 0 for name in WEAPONS}
 scooter = None
 was_e_pressed = False
 medkit_amount = 5 # celkový počet medkitů na mapě
+power_ups = []
+sprint_active = False
+sprint_timer = 0
 
 # Inicializace hráče
 x = random.randint(50, SCREEN_WIDTH-50)  # Inicializace pro klienta
@@ -177,6 +206,32 @@ except Exception as e:
     player_texture = player_surface
     print("Použita výchozí textura hráče (placeholder).")
 
+CHARACTER_SKINS = {
+    "Crossbow": "medic.png",
+    "Rocket Launcher": "soldier.png",
+    "Shotgun": "scout.png",
+    "Sniper": "sniper.png"
+}
+
+SKIN_TEXTURES = {}
+for weapon in weapon_names:
+    img_name = CHARACTER_SKINS.get(weapon, "player.png")  # <--- USE CLASS IMAGE!
+    path = os.path.join("images", img_name)
+    try:
+        SKIN_TEXTURES[weapon] = pygame.transform.scale(
+            pygame.image.load(path).convert_alpha(), (player_size, player_size)
+        )
+        print(f'Loaded CHARACTER skin for {weapon} from {path}')
+    except Exception as e:
+        print(f'Could not load CHARACTER skin for {weapon} from {path}: {e}')
+        SKIN_TEXTURES[weapon] = player_texture  # fallback to default player texture
+
+CLASS_MAX_HP = {
+    "Sniper": 100,
+    "Crossbow": 125,           # Medic
+    "Shotgun": 150,            # Scout
+    "Rocket Launcher": 150     # Soldier
+}
 
 # Načítání zbraní
 weapon_textures = {}
@@ -348,6 +403,36 @@ def vypocitej_tmavost_hranice(x_tile, y_tile):
     else:
         return DARKER_GREEN # Vnější hranice
 
+def draw_flag(screen, camera_x, camera_y, time_elapsed):
+    if flag_taken:
+        return
+    
+    # Výpočet pozice na obrazovce
+    screen_x = int(flag_px - camera_x + SCREEN_WIDTH // 2)
+    screen_y = int(flag_py - camera_y + SCREEN_HEIGHT // 2)
+    
+    # Zvětšené parametry vlajky
+    scale = 2.0  # <- Zmenšit podle potřeby (1.5 = 150 %, 2.0 = 200 % atd.)
+    flag_height = int(30 * scale)
+    pole_radius = int(10 * scale)
+    flag_length = int(40 * scale)
+    wave_offset = 5 * math.sin(time_elapsed * 2) * scale
+    
+    # Výpočet bodů trojúhelníkové vlajky
+    flag_points = [
+        (screen_x, screen_y - 5),  # Bod u tyče
+        (screen_x + flag_length, screen_y - 15 - wave_offset),
+        (screen_x, screen_y - flag_height - 3 * math.sin(time_elapsed * 2) * scale)
+    ]
+    
+    # Tyč (kruh + čára)
+    pygame.draw.circle(screen, (220, 50, 50), (screen_x, screen_y), pole_radius)
+    pygame.draw.line(screen, BLACK, (screen_x, screen_y), (screen_x, screen_y - flag_height - 10))
+    
+    # Vlajka
+    pygame.draw.polygon(screen, (220, 50, 50), flag_points)
+    pygame.draw.polygon(screen, BLACK, flag_points, 2)
+
 def draw_map(screen_surface, camera_center_x_map, camera_center_y_map):
     """Vykreslí mapu s ohledem na pozici kamery a screen shake."""
     global screen_shake_offset
@@ -413,62 +498,57 @@ def draw_map(screen_surface, camera_center_x_map, camera_center_y_map):
             screen_surface.blit(img_data['image'], (int(img_screen_x), int(img_screen_y)))
 
 
-def draw_player(screen_surface, _camera_center_x_map, _camera_center_y_map): # Parametry kamery nejsou přímo potřeba, hráč je vždy ve středu
-    """Vykreslí hráče (vždy ve středu obrazovky) s ohledem na screen shake a natočení."""
+def draw_player(screen_surface, _camera_center_x_map, _camera_center_y_map):
     global player_texture, player_team, player_angle, player_size, screen_shake_offset
-    global current_weapon, weapon_textures, WEAPONS
+    global current_weapon
 
-    # Hráč je vždy ve středu obrazovky + aktuální třesení
     player_draw_center_x = SCREEN_WIDTH // 2 + screen_shake_offset[0]
     player_draw_center_y = SCREEN_HEIGHT // 2 + screen_shake_offset[1]
-   
-    if player_texture:
-        texture_to_render = player_texture
-        if player_team == 3: # Modrý tým (id 3)
-            # Vytvoříme kopii a obarvíme ji, aby originál zůstal červený
-            texture_to_render = player_texture.copy() 
-            texture_to_render.fill(BLUE, special_flags=pygame.BLEND_RGBA_MULT) # Obarví texturu
-        
-        # Rotace textury hráče podle úhlu k myši
-        rotated_player_texture = pygame.transform.rotate(texture_to_render, -player_angle) # -player_angle pro správný směr
-        
-        # Získání obdélníku rotované textury a nastavení jeho středu
-        player_rect = rotated_player_texture.get_rect(center=(player_draw_center_x, player_draw_center_y))
-        
-        screen_surface.blit(rotated_player_texture, player_rect.topleft) # Vykreslení
-        
+
+    # Use the weapon skin if available, else fallback to player_texture
+    texture_to_render = SKIN_TEXTURES.get(current_weapon, player_texture)
+
+    if player_team == 3:
+        texture_to_render = texture_to_render.copy()
+        texture_to_render.fill(BLUE, special_flags=pygame.BLEND_RGBA_MULT)
+
+    rotated_player_texture = pygame.transform.rotate(texture_to_render, -player_angle)
+    player_rect = rotated_player_texture.get_rect(center=(player_draw_center_x, player_draw_center_y))
+    screen_surface.blit(rotated_player_texture, player_rect.topleft)
+
+    # ...rest of your weapon drawing code...        
         # Vykreslení aktuální zbraně
-        if current_weapon in weapon_textures:
-            weapon_data = WEAPONS[current_weapon]
-            original_weapon_texture = weapon_textures[current_weapon]
-            
-            # Výpočet pozice zbraně relativně k hráči
-            # Úhel pro offset zbraně (kolmo na směr pohledu hráče, nebo mírně dopředu)
-            # Zde předpokládáme, že offset_x je vzdálenost od středu hráče podél osy pohledu
-            # a offset_y je vzdálenost kolmo na osu pohledu.
-            # Pro jednoduchost použijeme offset_x jako vzdálenost od středu a offset_y pro posun do strany.
-            
-            # Natočení offsetu zbraně podle úhlu hráče
-            angle_rad = math.radians(player_angle - 90) # -90 protože úhly v math a pygame mohou být různé
-            
-            # Offset zbraně od středu hráče
-            # weapon_offset_x_rotated = weapon_data["offset_x"] * math.cos(angle_rad) - weapon_data["offset_y"] * math.sin(angle_rad)
-            # weapon_offset_y_rotated = weapon_data["offset_x"] * math.sin(angle_rad) + weapon_data["offset_y"] * math.cos(angle_rad)
+    if current_weapon in weapon_textures:
+        weapon_data = WEAPONS[current_weapon]
+        original_weapon_texture = weapon_textures[current_weapon]
+        
+        # Výpočet pozice zbraně relativně k hráči
+        # Úhel pro offset zbraně (kolmo na směr pohledu hráče, nebo mírně dopředu)
+        # Zde předpokládáme, že offset_x je vzdálenost od středu hráče podél osy pohledu
+        # a offset_y je vzdálenost kolmo na osu pohledu.
+        # Pro jednoduchost použijeme offset_x jako vzdálenost od středu a offset_y pro posun do strany.
+        
+        # Natočení offsetu zbraně podle úhlu hráče
+        angle_rad = math.radians(player_angle - 90) # -90 protože úhly v math a pygame mohou být různé
+        
+        # Offset zbraně od středu hráče
+        # weapon_offset_x_rotated = weapon_data["offset_x"] * math.cos(angle_rad) - weapon_data["offset_y"] * math.sin(angle_rad)
+        # weapon_offset_y_rotated = weapon_data["offset_x"] * math.sin(angle_rad) + weapon_data["offset_y"] * math.cos(angle_rad)
 
-            # Jednodušší offset: zbraň je mírně před hráčem a vpravo od něj (z pohledu hráče)
-            # Vzdálenost od středu hráče ve směru pohledu
-            forward_offset = weapon_data.get("offset_x", 20) # Jak daleko před hráčem
-            # Vzdálenost od osy pohledu (do strany)
-            side_offset = weapon_data.get("offset_y", 10) # Jak daleko do strany
+        # Jednodušší offset: zbraň je mírně před hráčem a vpravo od něj (z pohledu hráče)
+        # Vzdálenost od středu hráče ve směru pohledu
+        forward_offset = weapon_data.get("offset_x", 20) # Jak daleko před hráčem
+        # Vzdálenost od osy pohledu (do strany)
+        side_offset = weapon_data.get("offset_y", 10) # Jak daleko do strany
 
-            weapon_center_x = player_draw_center_x + forward_offset * math.cos(angle_rad) - side_offset * math.sin(angle_rad)
-            weapon_center_y = player_draw_center_y + forward_offset * math.sin(angle_rad) + side_offset * math.cos(angle_rad)
+        weapon_center_x = player_draw_center_x + forward_offset * math.cos(angle_rad) - side_offset * math.sin(angle_rad)
+        weapon_center_y = player_draw_center_y + forward_offset * math.sin(angle_rad) + side_offset * math.cos(angle_rad)
 
-            # Rotace textury zbraně
-            rotated_weapon_texture = pygame.transform.rotate(original_weapon_texture, -player_angle)
-            weapon_rect = rotated_weapon_texture.get_rect(center=(int(weapon_center_x), int(weapon_center_y)))
-            
-            screen_surface.blit(rotated_weapon_texture, weapon_rect.topleft)
+        # Rotace textury zbraně
+        rotated_weapon_texture = pygame.transform.rotate(original_weapon_texture, -player_angle)
+        weapon_rect = rotated_weapon_texture.get_rect(center=(int(weapon_center_x), int(weapon_center_y)))
+        
+        screen_surface.blit(rotated_weapon_texture, weapon_rect.topleft)
     else:
         # Záložní vykreslení, pokud textura hráče není k dispozici
         fallback_color = RED if player_team == 2 else BLUE
@@ -478,18 +558,25 @@ def draw_player(screen_surface, _camera_center_x_map, _camera_center_y_map): # P
 def draw_other_players(screen_surface, camera_center_x_map, camera_center_y_map):
     """Vykreslí ostatní hráče s ohledem na kameru a screen shake."""
     global players_interpolated, my_id, player_radius, screen_shake_offset
+    global player_texture, SKIN_TEXTURES, weapon_textures, WEAPONS
     map_pixel_width = MAP_WIDTH * TILE_SIZE
     map_pixel_height = MAP_HEIGHT * TILE_SIZE
+
+    # Debug výpis
+    other_players_count = len([pid for pid in players_interpolated.keys() if pid != my_id])
+    if other_players_count > 0:
+        print(f"[DEBUG] Kreslím {other_players_count} ostatních hráčů (celkem {len(players_interpolated)}, můj ID: {my_id})")
 
     for player_id_server, p_data_server in players_interpolated.items():
         if player_id_server == my_id: # Nekreslíme sami sebe zde
             continue
         
-        if isinstance(p_data_server, (list, tuple)) and len(p_data_server) >= 2: # [x_net, y_net, angle, color_list]
+        if isinstance(p_data_server, (list, tuple)) and len(p_data_server) >= 2: # [x_net, y_net, angle, color_list, weapon]
             # Síťové souřadnice (0-SCREEN_WIDTH/HEIGHT)
             other_player_net_x, other_player_net_y = p_data_server[0], p_data_server[1]
             other_player_angle = p_data_server[2] if len(p_data_server) > 2 else 0
             other_player_color_tuple = tuple(p_data_server[3]) if len(p_data_server) > 3 and isinstance(p_data_server[3], list) else GREEN
+            other_player_weapon = p_data_server[4] if len(p_data_server) > 4 else "Crossbow"
             
             # Převod síťových souřadnic na mapové souřadnice (pixely)
             other_player_map_x = (other_player_net_x / SCREEN_WIDTH) * map_pixel_width
@@ -498,19 +585,45 @@ def draw_other_players(screen_surface, camera_center_x_map, camera_center_y_map)
             # Pozice ostatních hráčů na obrazovce
             other_player_screen_x = int(other_player_map_x - camera_center_x_map + SCREEN_WIDTH // 2 + screen_shake_offset[0])
             other_player_screen_y = int(other_player_map_y - camera_center_y_map + SCREEN_HEIGHT // 2 + screen_shake_offset[1])
+              # Vykreslení hráče s plnou grafikou
+            # Použijeme skin pro zbraň, pokud je dostupný, jinak základní texturu hráče
+            texture_to_render = SKIN_TEXTURES.get(other_player_weapon, player_texture)
             
-            # Jednoduché vykreslení jako obdélník nebo kruh
-            # Můžeme použít player_texture a rotovat ji podle other_player_angle, pokud chceme detailnější zobrazení
-            # Pro jednoduchost zde použijeme barevný kruh
-            pygame.draw.circle(screen_surface, other_player_color_tuple, 
-                               (other_player_screen_x, other_player_screen_y), 
-                               player_radius) # Použijeme stejný radius jako pro našeho hráče
-            
-            # Můžeme přidat i ukazatel směru
-            pointer_len = player_radius * 1.5
-            end_x = other_player_screen_x + pointer_len * math.cos(math.radians(other_player_angle - 90))
-            end_y = other_player_screen_y + pointer_len * math.sin(math.radians(other_player_angle - 90))
-            pygame.draw.line(screen_surface, WHITE, (other_player_screen_x, other_player_screen_y), (int(end_x), int(end_y)), 2)
+            if texture_to_render:
+                # Rotace textury podle úhlu hráče
+                rotated_texture = pygame.transform.rotate(texture_to_render, -other_player_angle)
+                texture_rect = rotated_texture.get_rect(center=(other_player_screen_x, other_player_screen_y))
+                screen_surface.blit(rotated_texture, texture_rect.topleft)
+                
+                # Vykreslení zbraně
+                if other_player_weapon in weapon_textures:
+                    weapon_data = WEAPONS[other_player_weapon]
+                    original_weapon_texture = weapon_textures[other_player_weapon]
+                    
+                    # Výpočet pozice zbraně relativně k hráči
+                    angle_rad = math.radians(other_player_angle - 90)
+                    forward_offset = weapon_data.get("offset_x", 20)
+                    side_offset = weapon_data.get("offset_y", 10)
+                    
+                    weapon_center_x = other_player_screen_x + forward_offset * math.cos(angle_rad) - side_offset * math.sin(angle_rad)
+                    weapon_center_y = other_player_screen_y + forward_offset * math.sin(angle_rad) + side_offset * math.cos(angle_rad)
+                    
+                    # Rotace textury zbraně
+                    rotated_weapon_texture = pygame.transform.rotate(original_weapon_texture, -other_player_angle)
+                    weapon_rect = rotated_weapon_texture.get_rect(center=(int(weapon_center_x), int(weapon_center_y)))
+                    
+                    screen_surface.blit(rotated_weapon_texture, weapon_rect.topleft)
+            else:
+                # Záložní vykreslení jako barevný kruh
+                pygame.draw.circle(screen_surface, other_player_color_tuple, 
+                                   (other_player_screen_x, other_player_screen_y), 
+                                   player_radius)
+                
+                # Ukazatel směru
+                pointer_len = player_radius * 1.5
+                end_x = other_player_screen_x + pointer_len * math.cos(math.radians(other_player_angle - 90))
+                end_y = other_player_screen_y + pointer_len * math.sin(math.radians(other_player_angle - 90))
+                pygame.draw.line(screen_surface, WHITE, (other_player_screen_x, other_player_screen_y), (int(end_x), int(end_y)), 2)
 
 
 def draw_ui(screen_surface, ui_font):
@@ -627,17 +740,18 @@ generate_medkits(medkit_amount, TILE_SIZE, MAP_WIDTH, MAP_HEIGHT, BOUNDARY_WIDTH
 
 
 def change_weapon(direction_change):
-    """Změní aktivní zbraň."""
     global current_weapon_index, current_weapon, weapon_names
-    
-    current_weapon_index = (current_weapon_index + direction_change) % len(weapon_names)
-    # Zajistí, že index zůstane v platném rozsahu (pro případ záporného výsledku % v Pythonu)
-    if current_weapon_index < 0:
-        current_weapon_index += len(weapon_names)
-        
-    current_weapon = weapon_names[current_weapon_index]
-    print(f"Zbraň změněna na: {current_weapon}")
+    global max_player_health, player_health
 
+    current_weapon_index = (current_weapon_index + direction_change) % len(weapon_names)
+    current_weapon = weapon_names[current_weapon_index]
+
+    # Set max HP based on class
+    max_player_health = CLASS_MAX_HP.get(current_weapon, 100)
+    # Optionally, heal to full when switching class:
+    player_health = max_player_health
+
+    print(f"Zbraň změněna na {current_weapon} (Max HP: {max_player_health})")
 
 def start_new_random_catastrophe():
     """Spustí novou náhodnou katastrofu, pokud žádná neběží."""
@@ -669,6 +783,8 @@ async def game_loop():
     # Globální proměnné pro katastrofy, které se zde modifikují nebo čtou
     global active_catastrophe, catastrophe_start_time, catastrophe_duration
     global last_catastrophe_trigger_time, catastrophe_interval, screen_shake_offset
+    global sprint_active, sprint_timer, PLAYER_SPEED
+    global sprint_respawn_timer
     
     scooter = Scooter(
         MAP_WIDTH // 2 * TILE_SIZE + 100,  # Pozice vedle středu mapy
@@ -694,9 +810,19 @@ async def game_loop():
                 last_update_time = time.time()
 
                 game_is_running = True
+                sprint_respawn_timer = time.time()
                 while game_is_running:
+                    current_time = time.time()
                     current_loop_time = time.time()
                     should_shoot_this_frame = False # Reset na začátku každého snímku
+                    if current_time - sprint_respawn_timer >= 2:
+                        sprint_respawn_timer = current_time
+                        spawn_x = random.randint(BOUNDARY_WIDTH + 1, MAP_WIDTH - BOUNDARY_WIDTH - 2) * TILE_SIZE
+                        spawn_y = random.randint(BOUNDARY_WIDTH + 1, MAP_HEIGHT - BOUNDARY_WIDTH - 2) * TILE_SIZE
+                        sprint = PowerUp(spawn_x, spawn_y, "images/sprint.png", "sprint", duration=5)
+                        power_ups.append(sprint)
+                        print("Nový sprint power-up přidán!")
+                    current_time = time.time()
 
                     # Zpracování událostí (vstupy od uživatele)
                     for event in pygame.event.get():
@@ -711,6 +837,15 @@ async def game_loop():
                             elif event.key == pygame.K_k: # Manuální spuštění katastrofy
                                 print("Klávesa K stisknuta - pokus o spuštění katastrofy.")
                                 start_new_random_catastrophe()
+                        if event.type == pygame.QUIT or (event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE):
+                            running = False
+                        elif event.type == pygame.KEYDOWN and event.key == pygame.K_t:
+                            player_tile_x, player_tile_y = get_player_tile_position()
+                            add_image("images/tree1.png", player_tile_x + 2, player_tile_y + 2, 2.0)
+                        elif event.type == pygame.KEYDOWN and event.key == pygame.K_p:
+                            tile_x, tile_y = get_player_tile_position()
+                            sprint = PowerUp(spawn_x, spawn_y, "images/sprint.png", "sprint", duration=5)
+                            power_ups.append(sprint)
                         elif event.type == pygame.MOUSEBUTTONDOWN:
                             if event.button == 1: # Levé tlačítko myši - střelba
                                 if shoot(current_weapon):
@@ -722,6 +857,19 @@ async def game_loop():
 
                     keys = pygame.key.get_pressed()
                     dx, dy = 0, 0
+                    if sprint_active:
+                        sprint_timer -= 1
+                        if sprint_timer <=0:
+                            sprint_active = False
+                            PLAYER_SPEED = BASE_SPEED
+                    current_speed = PLAYER_SPEED
+                    # Pohyb hráče
+                    pressed_keys = pygame.key.get_pressed()
+                    movement_dx_map = 0; movement_dy_map = 0 # Změna pozice na mapě
+                    if pressed_keys[pygame.K_w] or pressed_keys[pygame.K_UP]: movement_dy_map -= PLAYER_SPEED
+                    if pressed_keys[pygame.K_s] or pressed_keys[pygame.K_DOWN]: movement_dy_map += PLAYER_SPEED
+                    if pressed_keys[pygame.K_a] or pressed_keys[pygame.K_LEFT]: movement_dx_map -= PLAYER_SPEED
+                    if pressed_keys[pygame.K_d] or pressed_keys[pygame.K_RIGHT]: movement_dx_map += PLAYER_SPEED
                     
                     current_e_pressed = keys[pygame.K_e]
                     if current_e_pressed and not was_e_pressed:
@@ -751,6 +899,9 @@ async def game_loop():
                                 print("Sesedli jste z koloběžky!")
                     was_e_pressed = current_e_pressed
                     
+                    is_moving = (movement_dx_map != 0 or movement_dy_map != 0)
+                    if is_moving:
+                        move_player(movement_dx_map, movement_dy_map)
 
                     if scooter and scooter.is_player_on:
                         # Pohyb na koloběžce - jiné ovládání
@@ -844,8 +995,76 @@ async def game_loop():
                         if screen_shake_offset != (0,0) : screen_shake_offset = (0, 0)
                     # --- Konec Logiky Katastrof ---
 
-                    # Posílání dat na server (pozice, úhel, barva, případně projektil)
-                    if is_moving or should_shoot_this_frame or (current_loop_time - last_update_time >= UPDATE_INTERVAL):
+                    # Aktualizace stavu pohybu
+                    moved = (dx != 0 or dy != 0)
+                    is_moving = moved
+                    
+                    if moved:
+                        move_player(dx, dy)
+                        update_powerups()
+                    
+                    def update_powerups():
+                        global sprint_active, sprint_timer
+                        
+                        player_rect = pygame.Rect(player_x - player_radius, player_y - player_radius,
+                                                  player_radius * 2, player_radius * 2)
+                    
+                        for power_up in power_ups:
+                            player_rect = pygame.Rect(
+                                int(player_x - player_radius),
+                                int(player_y - player_radius),
+                                int(player_radius * 2),
+                                int(player_radius * 2)
+                            )
+                            
+                            if power_up.active and power_up.rect.colliderect(player_rect):
+                                if power_up.effect_type == "sprint":
+                                    sprint_active = True
+                                    sprint_timer = power_up.duration * 60
+                                    PLAYER_SPEED = BASE_SPEED * 2
+                                    print("Sprint aktivován!")
+                                power_up.active = False
+                                power_ups.remove(power_up)
+                                
+                    
+                    
+                    if sprint_active:
+                        sprint_timer -= 1
+                        if sprint_timer <= 0:
+                            sprint_active = False
+                            PLAYER_SPEED = BASE_SPEED
+                            print("Sprint skončil")
+                    
+                    # Provedení pohybu
+                    if moved:
+                        move_player(dx, dy)
+                        update_powerups()
+
+                    # Výpočet úhlu mezi hráčem a kurzorem myši
+                    player_screen_x = int(SCREEN_WIDTH // 2)
+                    player_screen_y = int(SCREEN_HEIGHT // 2)
+                    player_angle = calculate_angle_to_mouse(player_screen_x, player_screen_y)
+                    
+                    # Aktualizace cooldownů zbraní
+                    for weapon in weapon_cooldowns:
+                        if weapon_cooldowns[weapon] > 0:
+                            weapon_cooldowns[weapon] -= 1
+                    
+                    if sprint_active:
+                        PLAYER_SPEED = BASE_SPEED * 2
+                        sprint_timer -= 1
+                        if sprint_timer <= 0:
+                            sprint_active = False
+                            PLAYER_SPEED = BASE_SPEED
+
+                    # Posílání dat serveru (při pohybu nebo po uplynutí intervalu)
+                    if moved or current_time - last_update_time >= UPDATE_INTERVAL:
+                        start_time = time.time()
+                        await ws_connection.send_json({"x": x, "y": y})
+                        last_update_time = current_time
+                    
+                    # Přijímání dat od serveru (non-blocking)
+                    # Posílání dat na server (pozice, úhel, barva, případně projektil)                    if is_moving or should_shoot_this_frame or (current_loop_time - last_update_time >= UPDATE_INTERVAL):
                         time_before_send = time.time()
                         data_to_send = {
                             "x": x, 
@@ -904,12 +1123,24 @@ async def game_loop():
                                         "radius": proj_info.get("radius", default_weapon_props["projectile_size"])
                                     }
                                     projectiles.append(received_projectile)
-                                # else: print(f"Ignoruji vlastní projektil od serveru: {proj_info.get('owner_id')}")
-                                continue # Přeskočíme zbytek, pokud to byla jen zpráva o projektilu
-
-                            # Zpracování pozic hráčů (slovník {id: [x_net, y_net, angle, color_list]})
+                                # else: print(f"Ignoruji vlastní projektil od serveru: {proj_info.get('owner_id')}")                            # Zpracování pozic hráčů (slovník {id: [x_net, y_net, angle, color_list, weapon]})
                             players_prev = players_interpolated.copy() if players_interpolated else {}
-                            players = server_data # Server posílá kompletní stav všech hráčů
+                            
+                            # Server posílá objekt, převedeme na pole pro kompatibilitu
+                            players = {}
+                            for pid, pdata in server_data.items():
+                                if isinstance(pdata, dict):
+                                    # Převod z objektu na pole [x, y, angle, color, weapon]
+                                    players[pid] = [
+                                        pdata.get("x", 100),
+                                        pdata.get("y", 100), 
+                                        pdata.get("angle", 0),
+                                        pdata.get("color", [100, 255, 100]),
+                                        pdata.get("weapon", "Crossbow")
+                                    ]
+                                else:
+                                    # Pokud už je to pole, zachováme
+                                    players[pid] = pdata
 
                             # První přiřazení ID našemu hráči
                             if my_id is None:
@@ -925,6 +1156,9 @@ async def game_loop():
                                             if len(server_pdata) >= 4 and isinstance(server_pdata[3], list):
                                                 my_color = tuple(server_pdata[3]) # Zde přiřazujeme globální my_color
                                             break
+                              # Ujistíme se, že naše vlastní data jsou v `players` aktuální
+                            if my_id and my_id in players:
+                                players[my_id] = [x, y, player_angle, list(my_color), current_weapon]
                                     if isinstance(server_pdata, dict) and "scooter" in server_pdata:
                                         scooter_data = server_pdata["scooter"]
             
@@ -968,19 +1202,18 @@ async def game_loop():
                     except Exception as e:
                         print(f"Neočekávaná chyba při příjmu dat ze serveru: {e}")
 
-                    status = "Připojeno" if connected else "Odpojeno"
-
-                    # Interpolace pozic ostatních hráčů pro plynulejší pohyb
+                    status = "Připojeno" if connected else "Odpojeno"                    # Interpolace pozic ostatních hráčů pro plynulejší pohyb
                     current_interpolated_state = {}
                     for server_pid, server_pdata in players.items():
-                        if isinstance(server_pdata, list) and len(server_pdata) >= 2: # [x_net, y_net, angle, color]
+                        if isinstance(server_pdata, list) and len(server_pdata) >= 2: # [x_net, y_net, angle, color, weapon]
                             net_x_from_server, net_y_from_server = server_pdata[0], server_pdata[1]
                             angle_from_server = server_pdata[2] if len(server_pdata) > 2 else 0
                             color_list_from_server = server_pdata[3] if len(server_pdata) > 3 and isinstance(server_pdata[3], list) else list(GREEN)
-
+                            weapon_from_server = server_pdata[4] if len(server_pdata) > 4 else "Crossbow"
+                            
                             if server_pid == my_id:
                                 # Naše pozice je vždy aktuální (x, y jsou naše síťové souřadnice)
-                                current_interpolated_state[server_pid] = [x, y, player_angle, list(my_color)]
+                                current_interpolated_state[server_pid] = [x, y, player_angle, list(my_color), current_weapon]
                             elif server_pid in players_prev and \
                                  isinstance(players_prev[server_pid], list) and \
                                  len(players_prev[server_pid]) >= 2:
@@ -993,12 +1226,18 @@ async def game_loop():
                                 # Interpolace úhlu může být složitější (shortest angle), pro jednoduchost lineární
                                 interp_angle = prev_angle + (angle_from_server - prev_angle) * other_players_interpolation_factor
 
-                                current_interpolated_state[server_pid] = [interp_net_x, interp_net_y, interp_angle, color_list_from_server]
+                                current_interpolated_state[server_pid] = [interp_net_x, interp_net_y, interp_angle, color_list_from_server, weapon_from_server]
                             else:
                                 # Nový hráč nebo chybí předchozí data, použijeme aktuální data ze serveru
-                                current_interpolated_state[server_pid] = [net_x_from_server, net_y_from_server, angle_from_server, color_list_from_server]
+                                current_interpolated_state[server_pid] = [net_x_from_server, net_y_from_server, angle_from_server, color_list_from_server, weapon_from_server]
+                    
+                    # Nastavíme interpolované data
                     players_interpolated = current_interpolated_state
+                    
 
+                    for power_up in power_ups:
+                        if power_up.active:
+                            power_up.draw(screen, player_x, player_y)
                     # --- Vykreslování ---
                     # Kamera je vždy zaměřena na našeho hráče (player_x, player_y jsou mapové souřadnice)
                     # Efekt třesení (screen_shake_offset) se aplikuje uvnitř jednotlivých vykreslovacích funkcí.
@@ -1013,6 +1252,7 @@ async def game_loop():
                             if not other_scooter.is_player_on:  # Vykresluj pouze koloběžky bez hráčů
                                 other_scooter.draw(screen, camera_x, camera_y)
                     
+                    draw_flag(screen, player_x, player_y, pygame.time.get_ticks() / 1000.0)
                     draw_other_players(screen, player_x, player_y) # Ostatní hráči se kreslí relativně ke kameře
                     draw_player(screen, player_x, player_y) # Náš hráč (kreslený ve středu obrazovky + shake)
                     
