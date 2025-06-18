@@ -82,31 +82,37 @@ SERVER_URL = "wss://projekt-1ep-tabor.onrender.com/ws"
 8. **Diagnostické informace**: Zobrazení FPS, pozice hráče, stavu připojení a dalších užitečných dat
 9. **Pokrovilé ovládání**: Plynulé otáčení směrem k myši, přepínání zbraní kolečkem myši
 
+## Extras
+- Klávesou K spustíte katastrofu (zemětřesení, tornádo)
+- Klávesou T zasadíte strom
+
 ## Zbraňový a projektilový systém
 
-Hra obsahuje 4 unikátní zbraně s různými taktikami použití:
+Hra obsahuje 4 unikátní třídy a zbraně s různými taktikami použití:
 
-- **Kuše (Crossbow)**: 
+- **Kuše (Crossbow - Medic)**: 
   - Poškození: 25 HP
   - Cooldown: 30 snímků (~0.5s)
   - Projektily: Žluté, rychlé, střední dosah
-  
-- **Raketomet (Rocket Launcher)**: 
+  - Medic HP: 125
+
+- **Raketomet (Rocket Launcher - Soldier)**: 
   - Poškození: 50 HP  
   - Cooldown: 60 snímků (~1s)
   - Projektily: Oranžové, pomalé, dlouhý dosah, velké
+  - Soldier HP: 150
 
-- **Brokovnice (Shotgun)**: 
+- **Brokovnice (Shotgun - Scout)**: 
   - Poškození: 35 HP
   - Cooldown: 45 snímků (~0.75s) 
   - Projektily: Bílé, velmi rychlé, krátký dosah
+  - Scout HP: 150
 
 - **Odstřelovačka (Sniper)**: 
   - Poškození: 75 HP
   - Cooldown: 90 snímků (~1.5s)
   - Projektily: Cyan, nejrychlejší, nejdelší dosah, malé
-
-Každá zbraň má vlastní vizuální projektily s realistickými balistickými vlastnostmi.
+  - Sniper HP: 100
 
 ## Síťová komunikace
 
