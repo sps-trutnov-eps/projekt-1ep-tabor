@@ -666,9 +666,21 @@ def shoot(weapon_name_arg):
     proj_dy_normalized = math.sin(angle_rad_math)
 
     # Vytvoření projektilu
+    # Apply an offset to the bullet spawn (e.g. 20 pixels forward, 10 right)
+    spawn_offset_forward = 20
+    spawn_offset_right = 10
+
+    # Right-hand offset
+    right_dx = -math.sin(angle_rad_math)
+    right_dy = math.cos(angle_rad_math)
+
+    # Final spawn position
+    spawn_x = player_x + proj_dx_normalized * spawn_offset_forward + right_dx * spawn_offset_right
+    spawn_y = player_y + proj_dy_normalized * spawn_offset_forward + right_dy * spawn_offset_right
+
     new_projectile = {
-        "x": player_x, # Startovní pozice projektilu (střed hráče na mapě)
-        "y": player_y,
+        "x": spawn_x,
+        "y": spawn_y,
         "dx": proj_dx_normalized * weapon_props["projectile_speed"], # Směr X * rychlost
         "dy": proj_dy_normalized * weapon_props["projectile_speed"], # Směr Y * rychlost
         "lifetime": weapon_props["projectile_lifetime"],
