@@ -1216,7 +1216,7 @@ def show_team_selection_screen():
     def ws_team_count_updater():
         async def ws_loop():
             try:
-                async with websockets.connect(SERVER_URL.replace('wss://', 'ws://').replace('https://', 'ws://').replace('http://', 'ws://')) as ws:
+                async with websockets.connect(SERVER_URL) as ws:
                     while not ws_stop_event.is_set():
                         await ws.send(json.dumps({"action": "get_team_counts"}))
                         try:
