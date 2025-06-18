@@ -37,6 +37,12 @@ BLUE = (0, 0, 255)
 WHITE = (255, 255, 255)
 YELLOW = (255, 255, 0)
 
+# --- Barvy týmů ---
+BABY_BLUE = (137, 207, 240)
+BABY_PINK = (255, 182, 193)
+TEAM_COLORS = [BABY_BLUE, BABY_PINK]
+TEAM_NAMES = ["Modrý tým", "Růžový tým"]
+
 class PowerUp:
     def __init__(self, x, y, image_path, effect_type, duration = 20):
         self.x = x
@@ -460,59 +466,39 @@ def draw_map(screen_surface, camera_center_x_map, camera_center_y_map):
 
 def draw_player(screen_surface, _camera_center_x_map, _camera_center_y_map):
     global player_texture, player_team, player_angle, player_size, screen_shake_offset
-    global current_weapon
+    global current_weapon, my_color
 
     player_draw_center_x = SCREEN_WIDTH // 2 + screen_shake_offset[0]
     player_draw_center_y = SCREEN_HEIGHT // 2 + screen_shake_offset[1]
 
-    # Use the weapon skin if available, else fallback to player_texture
+    # --- Vykreslení tenké kružnice v barvě hráče ---
+    pygame.draw.circle(
+        screen_surface,
+        my_color,
+        (player_draw_center_x, player_draw_center_y),
+        int(player_radius * 1.15),
+        4  # Tloušťka kružnice
+    )
+
+    # Vykresli hráče vždy barevně správně (bez ohledu na tým)
     texture_to_render = SKIN_TEXTURES.get(current_weapon, player_texture)
-
-    if player_team == 3:
-        texture_to_render = texture_to_render.copy()
-        texture_to_render.fill(BLUE, special_flags=pygame.BLEND_RGBA_MULT)
-
     rotated_player_texture = pygame.transform.rotate(texture_to_render, -player_angle)
     player_rect = rotated_player_texture.get_rect(center=(player_draw_center_x, player_draw_center_y))
     screen_surface.blit(rotated_player_texture, player_rect.topleft)
-
-    # ...rest of your weapon drawing code...        
-        # Vykreslení aktuální zbraně
+    # ...rest of your weapon drawing code...
     if current_weapon in weapon_textures:
         weapon_data = WEAPONS[current_weapon]
         original_weapon_texture = weapon_textures[current_weapon]
-        
-        # Výpočet pozice zbraně relativně k hráči
-        # Úhel pro offset zbraně (kolmo na směr pohledu hráče, nebo mírně dopředu)
-        # Zde předpokládáme, že offset_x je vzdálenost od středu hráče podél osy pohledu
-        # a offset_y je vzdálenost kolmo na osu pohledu.
-        # Pro jednoduchost použijeme offset_x jako vzdálenost od středu a offset_y pro posun do strany.
-        
-        # Natočení offsetu zbraně podle úhlu hráče
-        angle_rad = math.radians(player_angle - 90) # -90 protože úhly v math a pygame mohou být různé
-        
-        # Offset zbraně od středu hráče
-        # weapon_offset_x_rotated = weapon_data["offset_x"] * math.cos(angle_rad) - weapon_data["offset_y"] * math.sin(angle_rad)
-        # weapon_offset_y_rotated = weapon_data["offset_x"] * math.sin(angle_rad) + weapon_data["offset_y"] * math.cos(angle_rad)
-
-        # Jednodušší offset: zbraň je mírně před hráčem a vpravo od něj (z pohledu hráče)
-        # Vzdálenost od středu hráče ve směru pohledu
-        forward_offset = weapon_data.get("offset_x", 20) # Jak daleko před hráčem
-        # Vzdálenost od osy pohledu (do strany)
-        side_offset = weapon_data.get("offset_y", 10) # Jak daleko do strany
-
+        angle_rad = math.radians(player_angle - 90)
+        forward_offset = weapon_data.get("offset_x", 20)
+        side_offset = weapon_data.get("offset_y", 10)
         weapon_center_x = player_draw_center_x + forward_offset * math.cos(angle_rad) - side_offset * math.sin(angle_rad)
         weapon_center_y = player_draw_center_y + forward_offset * math.sin(angle_rad) + side_offset * math.cos(angle_rad)
-
-        # Rotace textury zbraně
         rotated_weapon_texture = pygame.transform.rotate(original_weapon_texture, -player_angle)
         weapon_rect = rotated_weapon_texture.get_rect(center=(int(weapon_center_x), int(weapon_center_y)))
-        
         screen_surface.blit(rotated_weapon_texture, weapon_rect.topleft)
     else:
-        # Záložní vykreslení, pokud textura hráče není k dispozici
-        fallback_color = RED if player_team == 2 else BLUE
-        pygame.draw.circle(screen_surface, fallback_color, (player_draw_center_x, player_draw_center_y), player_radius)
+        pygame.draw.circle(screen_surface, (200, 200, 200), (player_draw_center_x, player_draw_center_y), player_radius)
 
 
 def draw_other_players(screen_surface, camera_center_x_map, camera_center_y_map):
@@ -522,35 +508,37 @@ def draw_other_players(screen_surface, camera_center_x_map, camera_center_y_map)
     map_pixel_width = MAP_WIDTH * TILE_SIZE
     map_pixel_height = MAP_HEIGHT * TILE_SIZE
 
-    # Debug výpis
     other_players_count = len([pid for pid in players_interpolated.keys() if pid != my_id])
     if other_players_count > 0:
         print(f"[DEBUG] Kreslím {other_players_count} ostatních hráčů (celkem {len(players_interpolated)}, můj ID: {my_id})")
 
     for player_id_server, p_data_server in players_interpolated.items():
-        if player_id_server == my_id: # Nekreslíme sami sebe zde
+        if player_id_server == my_id:
             continue
-        
-        if isinstance(p_data_server, (list, tuple)) and len(p_data_server) >= 2: # [x_net, y_net, angle, color_list, weapon]
-            # Síťové souřadnice (0-SCREEN_WIDTH/HEIGHT)
+        if isinstance(p_data_server, (list, tuple)) and len(p_data_server) >= 2:
             other_player_net_x, other_player_net_y = p_data_server[0], p_data_server[1]
             other_player_angle = p_data_server[2] if len(p_data_server) > 2 else 0
             other_player_color_tuple = tuple(p_data_server[3]) if len(p_data_server) > 3 and isinstance(p_data_server[3], list) else GREEN
             other_player_weapon = p_data_server[4] if len(p_data_server) > 4 else "Crossbow"
-            
-            # Převod síťových souřadnic na mapové souřadnice (pixely)
+            other_player_team = p_data_server[5] if len(p_data_server) > 5 else None
+
             other_player_map_x = (other_player_net_x / SCREEN_WIDTH) * map_pixel_width
             other_player_map_y = (other_player_net_y / SCREEN_HEIGHT) * map_pixel_height
-            
-            # Pozice ostatních hráčů na obrazovce
             other_player_screen_x = int(other_player_map_x - camera_center_x_map + SCREEN_WIDTH // 2 + screen_shake_offset[0])
             other_player_screen_y = int(other_player_map_y - camera_center_y_map + SCREEN_HEIGHT // 2 + screen_shake_offset[1])
-              # Vykreslení hráče s plnou grafikou
-            # Použijeme skin pro zbraň, pokud je dostupný, jinak základní texturu hráče
+
+            # --- Vykreslení tenké kružnice podle barvy hráče ---
+            pygame.draw.circle(
+                screen_surface,
+                other_player_color_tuple,
+                (other_player_screen_x, other_player_screen_y),
+                int(player_radius * 1.15),
+                4  # Tloušťka kružnice
+            )
+
+            # --- Vykreslení hráče (skin/texture) ---
             texture_to_render = SKIN_TEXTURES.get(other_player_weapon, player_texture)
-            
             if texture_to_render:
-                # Rotace textury podle úhlu hráče
                 rotated_texture = pygame.transform.rotate(texture_to_render, -other_player_angle)
                 texture_rect = rotated_texture.get_rect(center=(other_player_screen_x, other_player_screen_y))
                 screen_surface.blit(rotated_texture, texture_rect.topleft)
@@ -559,8 +547,6 @@ def draw_other_players(screen_surface, camera_center_x_map, camera_center_y_map)
                 if other_player_weapon in weapon_textures:
                     weapon_data = WEAPONS[other_player_weapon]
                     original_weapon_texture = weapon_textures[other_player_weapon]
-                    
-                    # Výpočet pozice zbraně relativně k hráči
                     angle_rad = math.radians(other_player_angle - 90)
                     forward_offset = weapon_data.get("offset_x", 20)
                     side_offset = weapon_data.get("offset_y", 10)
@@ -568,7 +554,6 @@ def draw_other_players(screen_surface, camera_center_x_map, camera_center_y_map)
                     weapon_center_x = other_player_screen_x + forward_offset * math.cos(angle_rad) - side_offset * math.sin(angle_rad)
                     weapon_center_y = other_player_screen_y + forward_offset * math.sin(angle_rad) + side_offset * math.cos(angle_rad)
                     
-                    # Rotace textury zbraně
                     rotated_weapon_texture = pygame.transform.rotate(original_weapon_texture, -other_player_angle)
                     weapon_rect = rotated_weapon_texture.get_rect(center=(int(weapon_center_x), int(weapon_center_y)))
                     
@@ -1020,7 +1005,7 @@ async def game_loop():
                                     # Pokud už je to pole, zachováme
                                     players[pid] = pdata
 
-                            # První přiřazení ID našemu hráči
+                            # První přiřazení ID našeho hráče
                             if my_id is None:
                                 for server_pid, server_pdata in players.items():
                                     if isinstance(server_pdata, list) and len(server_pdata) >= 2:
@@ -1159,31 +1144,92 @@ async def game_loop():
         connected = False
         status = "Odpojeno"
 
+def show_team_selection_screen():
+    """Zobrazí úvodní obrazovku pro výběr týmu/barvy s live aktualizací počtů hráčů v týmech."""
+    global screen, font
+    import threading
+    import queue
+    import websockets
+    import asyncio
 
-async def main_async_runner():
-    """Spouštěč hlavní asynchronní funkce hry."""
-    try:
-        await game_loop()
-    finally:
-        pygame.quit()
-        print("Pygame byl úspěšně ukončen.")
+    selected_team = None
+    running = True
+    clock = pygame.time.Clock()
+    team_counts = [0, 0]  # Počet hráčů v týmech
+    team_counts_queue = queue.Queue()
+    ws_stop_event = threading.Event()
 
-if __name__ == "__main__":
-    # Ujistíme se, že složka 'images' existuje, jinak ji vytvoříme
-    if not os.path.exists("images"):
-        print("Složka 'images' nenalezena, pokouším se ji vytvořit...")
+    # Pozice kruhů
+    circle_radius = 70
+    circle_y = SCREEN_HEIGHT // 2
+    circle_xs = [SCREEN_WIDTH // 3, 2 * SCREEN_WIDTH // 3]
+
+    # --- Websocket klient pro live počty hráčů ---
+    def ws_team_count_updater():
+        async def ws_loop():
+            try:
+                async with websockets.connect(SERVER_URL.replace('wss://', 'ws://').replace('https://', 'ws://').replace('http://', 'ws://')) as ws:
+                    while not ws_stop_event.is_set():
+                        await ws.send(json.dumps({"action": "get_team_counts"}))
+                        try:
+                            msg = await asyncio.wait_for(ws.recv(), timeout=1.0)
+                            data = json.loads(msg)
+                            if "team_counts" in data:
+                                team_counts_queue.put(data["team_counts"])
+                        except Exception:
+                            pass
+                        await asyncio.sleep(0.5)
+            except Exception:
+                pass
+        asyncio.run(ws_loop())
+
+    ws_thread = threading.Thread(target=ws_team_count_updater, daemon=True)
+    ws_thread.start()
+
+    while running:
+        # Zpracuj nové počty hráčů
         try:
-            os.makedirs("images")
-            print("Složka 'images' úspěšně vytvořena.")
-        except OSError as e:
-            print(f"Nepodařilo se vytvořit složku 'images': {e}. Hra nemusí fungovat správně bez obrázků.")
+            while True:
+                team_counts = team_counts_queue.get_nowait()
+        except queue.Empty:
+            pass
 
-    # Zde by mohly být další kontroly existence specifických obrázků a vytváření placeholderů
-    # Například pro tree1.png, pokud je používán
-    tree_image_path = os.path.join("images", "tree1.png")
-    if not os.path.exists(tree_image_path):
-        print(f"Obrázek stromu '{tree_image_path}' nenalezen. Funkce přidávání stromů (klávesa T) nemusí fungovat správně.")
-        # Můžete zde vytvořit placeholder pro strom, pokud je to kritické
+        screen.fill((30, 30, 30))
+        title = font.render("Vyber si tým:", True, WHITE)
+        screen.blit(title, (SCREEN_WIDTH // 2 - title.get_width() // 2, 80))
+        for i, color in enumerate(TEAM_COLORS):
+            pygame.draw.circle(screen, color, (circle_xs[i], circle_y), circle_radius)
+            mouse_pos = pygame.mouse.get_pos()
+            if (mouse_pos[0] - circle_xs[i]) ** 2 + (mouse_pos[1] - circle_y) ** 2 < circle_radius ** 2:
+                pygame.draw.circle(screen, WHITE, (circle_xs[i], circle_y), circle_radius + 6, 3)
+            count_text = font.render(f"{team_counts[i]} hráčů", True, WHITE)
+            screen.blit(count_text, (circle_xs[i] - count_text.get_width() // 2, circle_y + circle_radius + 10))
+            name_text = font.render(TEAM_NAMES[i], True, color)
+            screen.blit(name_text, (circle_xs[i] - name_text.get_width() // 2, circle_y - circle_radius - 30))
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                ws_stop_event.set()
+                pygame.quit()
+                sys.exit()
+            elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                for i in range(2):
+                    if (event.pos[0] - circle_xs[i]) ** 2 + (event.pos[1] - circle_y) ** 2 < circle_radius ** 2:
+                        selected_team = i
+                        running = False
+        pygame.display.flip()
+        clock.tick(60)
+    ws_stop_event.set()
+    return selected_team
 
+# --- Před vstupem do hry zobraz výběr týmu ---
+if __name__ == "__main__":
+    # ...existing code...
+    selected_team = show_team_selection_screen()
+    if selected_team == 0:
+        my_color = BABY_BLUE
+        player_team = 2
+    else:
+        my_color = BABY_PINK
+        player_team = 3
     # Spuštění hlavní asynchronní smyčky hry
-    asyncio.run(main_async_runner())
+    asyncio.run(game_loop())
