@@ -31,7 +31,7 @@ blue_flag_px = 3300
 blue_flag_py = 600
 
 # Barvy
-BLACK = (0, 0, 0)
+BLACK = (0, 0, 0) 
 DARK_GREEN = (0, 80, 0)
 DARKER_GREEN = (0, 50, 0)
 GREEN = (0, 255, 0)
@@ -137,6 +137,7 @@ players = {}      # Data o hráčích ze serveru
 players_interpolated = {}  # Data o hráčích pro vykreslení (interpolovaná)
 players_prev = {}  # Předchozí pozice hráčů pro interpolaci
 my_id = None      # ID našeho hráče přidělené serverem
+holding_flag = False
 connected = False
 status = "Připojování..."
 response_time = None  # Proměnná pro měření odezvy serveru
@@ -401,6 +402,25 @@ def draw_flag(screen, camera_x, camera_y, time_elapsed):
     # Vlajka
     pygame.draw.polygon(screen, (220, 50, 50), flag_points)
     pygame.draw.polygon(screen, BLACK, flag_points, 2)
+
+def handle_flag_action():
+    global flag_taken, player_x, player_y, flag_px, flag_py
+ 
+    # Vypiš pro kontrolu:
+    print(f"[DEBUG] Hráč: ({player_x:.1f}, {player_y:.1f}) | Vlajka: ({flag_px:.1f}, {flag_py:.1f})")
+ 
+    if not flag_taken:
+        distance = math.hypot(player_x - flag_px, player_y - flag_py)
+        print(f"[DEBUG] Vzdálenost: {distance:.1f}")
+        if distance < 80:  # Zvětšil jsem na 80 pro jistotu
+            flag_taken = True
+            print(" Sebral jsi červenou vlajku!")
+    else:
+        flag_px = player_x
+        flag_py = player_y
+        flag_taken = False
+        print(f" Položil jsi červenou vlajku na ({flag_px:.1f}, {flag_py:.1f})")
+
     
 def draw_blue_flag(screen, camera_x, camera_y, time_elapsed):
     if blue_flag_taken:
@@ -496,6 +516,11 @@ def draw_map(screen_surface, camera_center_x_map, camera_center_y_map):
         pygame.draw.line(screen_surface, GRID_COLOR,
                          (0, screen_y),
                          (SCREEN_WIDTH, screen_y), 1)
+        
+        
+        
+        
+        
 
     # Vykreslení obrazových objektů (stromy atd.)
     for img_data in images:
@@ -690,6 +715,11 @@ def calculate_angle_to_mouse(player_screen_center_x, player_screen_center_y):
     angle_degrees = math.degrees(math.atan2(delta_y, delta_x)) + 90 
     return angle_degrees
 
+def is_near_flag():
+    """Vrátí True, pokud je hráč dost blízko vlajce pro sebrání."""
+    distance = math.hypot(player_x - flag_px, player_y - flag_py)
+    return distance < 50  # vzdálenost v pixelech
+
 def shoot(weapon_name_arg):
     """Zpracuje střelbu ze zbraně."""
     global weapon_cooldowns, WEAPONS, projectiles
@@ -825,6 +855,8 @@ async def game_loop():
                                 start_new_random_catastrophe()
                             elif event.key == pygame.K_l:
                                 handle_blue_flag_action()
+                            elif event.key == pygame.K_v:
+                                handle_flag_action()
                         if event.type == pygame.QUIT or (event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE):
                             running = False
                         elif event.type == pygame.KEYDOWN and event.key == pygame.K_t:
@@ -1281,3 +1313,5 @@ if __name__ == "__main__":
         player_team = 3
     # Spuštění hlavní asynchronní smyčky hry
     asyncio.run(game_loop())
+
+
