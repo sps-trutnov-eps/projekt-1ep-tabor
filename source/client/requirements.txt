@@ -1,5 +1,5 @@
 pygame==2.5.2
-aiohttp==3.8.5
+aiohttp==3.14.4
 asyncio
 requests
 websockets
