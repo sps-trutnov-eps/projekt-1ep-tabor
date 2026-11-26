@@ -1,3 +1,5 @@
+> Žákovský projekt třídy 1.EP, školní rok 2024/25, SPŠ Trutnov. Projekt se už neudržuje.
+
 # Tábor
 
 Vítejte ve hře Tábor!
